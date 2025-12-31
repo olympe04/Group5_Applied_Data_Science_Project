@@ -1,4 +1,4 @@
-# 03_preprocess_csv_only.py
+# 4_preprocess.py
 # Preprocess ECB statements (CSV-only, robust):
 # - Two parallel versions:
 #   (1) tokens_clean (no stemming) -> for sentiment lexicons
@@ -23,9 +23,8 @@ from pathlib import Path
 import pandas as pd
 
 
-# --------------------------
 # Stopwords + Stemmer loaders
-# --------------------------
+
 def _get_stopwords():
     try:
         import nltk
@@ -59,9 +58,8 @@ def _get_stemmer():
         return NoOpStemmer(), "noop"
 
 
-# --------------------------
 # Tokenization + cleaning
-# --------------------------
+
 TOKEN_RE = re.compile(r"[a-zA-Z]+(?:[-'][a-zA-Z]+)*")
 WHITESPACE_RE = re.compile(r"\s+")
 NONBREAKING_RE = re.compile(r"\xa0")
@@ -101,9 +99,8 @@ def preprocess_two_versions(text: str, stopwords_set: set, stemmer) -> dict:
     }
 
 
-# --------------------------
 # Date map (date,url) merge
-# --------------------------
+
 def load_date_map(base_dir: Path) -> pd.DataFrame:
     data_raw = base_dir / "data_raw"
     candidates = [
@@ -168,7 +165,7 @@ def main():
     data_clean = base_dir / "data_clean"
     data_clean.mkdir(parents=True, exist_ok=True)
 
-    in_path = data_raw / "ecb_statements_raw.csv"
+    in_path = data_raw / "ecb_statements_raw_filtered.csv"
     if not in_path.exists():
         raise FileNotFoundError(f"Input introuvable: {in_path}")
 
