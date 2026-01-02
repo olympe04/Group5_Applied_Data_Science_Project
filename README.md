@@ -1,6 +1,6 @@
-# ECB Communication — Replication and Extensions (Amaya & Filbien, 2015)
+# ECB Communication: Replication & Extensions (Amaya & Filbien, 2015)
 
-A research tentative to replicate and extend empirical results on ECB press-conference communication. The pipeline builds text-based measures (similarity and sentiment), merges them with market reactions (CAR), constructs macro controls, and produces the key regression tables and summary statistics. All data artifacts live at the project root and are reused across replication and extension workflows.
+A reproducible project to replicate and extend empirical results on ECB press-conference communication, from text-derived measures to event-study and regression outputs. The pipeline builds text-based measures (similarity and sentiment), merges them with market reactions (CAR), constructs macro controls, and produces key regression tables and summary statistics. All data artifacts live at the project root and are reused across replication and extension workflows.
 
 ## Research Context
 
@@ -11,6 +11,8 @@ The replication component follows the methodology in Amaya & Filbien (2015), foc
 - Table-style regressions and descriptive statistics over an observation window
 
 The extension component adds alternative similarity measures (TF-IDF cosine) and corresponding regression variants.
+
+The replication pipeline is parameterized to run on the original paper window (1999–2013) or on an extended sample up to 2025.
 
 ## Quickstart
 
@@ -25,7 +27,52 @@ The extension component adds alternative similarity measures (TF-IDF cosine) and
    - `MRO.csv`
 
 3. Install dependencies (Python 3.10+ recommended):
-   - Install core packages used across the pipeline: pandas, numpy, matplotlib, requests, beautifulsoup4, nltk, statsmodels
+   - Core packages used across the pipeline: pandas, numpy, matplotlib, requests, beautifulsoup4, nltk, statsmodels
+   - For extensions: scikit-learn
+   - For scraping (optional): selenium + a compatible browser driver (e.g., GeckoDriver for Firefox)
+
+4. Run the replication pipeline:
+   - Open `replication/main.py` and run it.
+   - Recommended default for reproducible runs: set `RUN_SCRAPING = False` unless you explicitly want to scrape the ECB website.
+   - If `RUN_SCRAPING = False`, ensure `data_raw/ecb_statements_raw.csv` already exists (from a prior run or shared artifact).
+
+5. Run the extension pipeline:
+   - Open `extension/main.py` and run it.
+   - Extensions reuse replication artifacts from `data_clean/` and write additional features to `data_features/`.
+   
+Optional: configure the analysis window (used by plots, regressions, and any windowed diagnostics):
+- Set `START_DATE` / `END_DATE` in `replication/main.py` and `extension/main.py`
+- These are passed to downstream scripts as `ECB_START_DATE` / `ECB_END_DATE`
+- Typical usage:
+  - Paper window: `1999-01-01` → `2013-12-31`
+  - Extended window: up to `2025-12-31` (or any end date supported by your available inputs)
+
+## Research Context
+
+The replication component follows the methodology in Amaya & Filbien (2015), focusing on:
+- Consecutive-text similarity (Jaccard similarity on stemmed bigrams)
+- Dictionary-based pessimism using the Loughran–McDonald lexicon
+- Event-study CAR around ECB communication events using a constant-mean return model
+- Table-style regressions and descriptive statistics over an observation window
+
+The extension component adds alternative similarity measures (TF-IDF cosine) and corresponding regression variants.
+
+The replication pipeline is parameterized to run on the original paper window (1999–2013) or on an extended sample up to 2025 by adjusting `START_DATE` / `END_DATE` (propagated as `ECB_START_DATE` / `ECB_END_DATE`).
+
+## Quickstart
+
+1. Create the expected data folders at the project root (if they don’t exist yet):
+   - `data_raw/`, `data_clean/`, `data_features/`, `outputs/`
+
+2. Place required external inputs in `data_raw/`:
+   - `^SX5E data.xlsx`
+   - `Loughran-McDonald_MasterDictionary_1993-2024.csv`
+   - `AMECO-AVGDGP-EA12.csv`
+   - `HICP_data_base100_2005.csv`
+   - `MRO.csv`
+
+3. Install dependencies (Python 3.10+ recommended):
+   - Core packages used across the pipeline: pandas, numpy, matplotlib, requests, beautifulsoup4, nltk, statsmodels
    - For extensions: scikit-learn
    - For scraping (optional): selenium + a compatible browser driver (e.g., GeckoDriver for Firefox)
 
@@ -41,6 +88,7 @@ The extension component adds alternative similarity measures (TF-IDF cosine) and
 Optional: set the analysis window (used by plots/regressions) in the orchestrators:
 - `START_DATE` / `END_DATE` in `replication/main.py` and `extension/main.py`
 - These are propagated to scripts via `ECB_START_DATE` / `ECB_END_DATE`.
+
 
 ## Repository Layout
 
