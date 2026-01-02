@@ -1,6 +1,6 @@
 # ECB Communication — Replication and Extensions (Amaya & Filbien, 2015)
 
-A research-grade codebase to replicate and extend empirical results on ECB press-conference communication. The pipeline builds text-based measures (similarity and sentiment), merges them with market reactions (CAR), constructs macro controls, and produces the key regression tables and summary statistics. The repository is organized to be portable and shareable: all data artifacts live at the project root and are reused across replication and extension workflows.
+A research tentative to replicate and extend empirical results on ECB press-conference communication. The pipeline builds text-based measures (similarity and sentiment), merges them with market reactions (CAR), constructs macro controls, and produces the key regression tables and summary statistics. All data artifacts live at the project root and are reused across replication and extension workflows.
 
 ## Research Context
 
@@ -65,9 +65,9 @@ project_root/
 │
 ├─ extension/                           # Extensions (alternative similarity + tables)
 │  ├─ main.py
-│  ├─ 5_tfidf_cosine.py
-│  ├─ 8_merge_car_pessimism_similarity.py
-│  └─ 8_tfidf_tables_concise.py
+│  ├─ E5_tfidf_cosine.py
+│  ├─ E8_merge_car_pessimism_similarity.py
+│  └─ E9_tfidf_tables_concise.py
 │
 ├─ extra_code/                          # Non-core tools and fallbacks
 │  ├─ 01_collect_urls_parallel.py
