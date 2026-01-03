@@ -1,6 +1,6 @@
-# ECB Communication: Replication & Extensions (Amaya & Filbien, 2015)
+# The similarity of ECB’s communication: Replication & Extensions (Amaya & Filbien, 2015)
 
-A reproducible project to replicate and extend empirical results on ECB press-conference communication, from text-derived measures to event-study and regression outputs. The pipeline builds text-based measures (similarity and sentiment), merges them with market reactions (CAR), constructs macro controls, and produces key regression tables and summary statistics.
+A reproducible project to replicate and extend empirical results on the similarity of ECB's press-conference communication, from text-derived measures to event-study and regression outputs. The pipeline builds text-based measures (similarity and sentiment), merges them with market reactions (CAR), constructs macro controls, and produces key regression tables and summary statistics.
 
 ## Research Context
 
