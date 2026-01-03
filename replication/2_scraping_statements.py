@@ -1,8 +1,12 @@
 # 2_scraping_statements.py
 # Collect ECB press conference transcripts (statement + Q&A) from a list of URLs.
 # I/O:
-#   Inputs: CSV file "data_raw/ecb_speech_urls.csv" with at least column [url] (optionally [date]).
-#   Outputs: CSV file "data_raw/ecb_statements_raw.csv" with columns [date, title, subtitle, url, method, statement_text, qa_text, error].
+#   Inputs : data_raw/ecb_speech_urls.csv with column [url] (optionally [date]).
+#   Outputs: data_raw/ecb_statements_raw.csv with columns
+#            [date, title, subtitle, url, method, statement_text, qa_text, error].
+# Notes:
+#   The script iterates over URLs, downloads each page, extracts metadata + text, splits statement vs Q&A,
+#   cleans boilerplate, and writes one row per URL (keeping failures with an error message).
 
 from __future__ import annotations
 
@@ -29,6 +33,20 @@ CONFIG = {
     "MAX_URLS": None,
     "VERBOSE_EVERY": 1,
 }
+
+
+def get_project_root() -> Path:
+    """Return repository root (project root is parent of replication/)."""
+    scripts_dir = Path(__file__).resolve().parent  # .../replication
+    return scripts_dir.parent
+
+
+def resolve_paths(project_root: Path) -> tuple[Path, Path]:
+    """Return (input_csv_path, output_csv_path) for the scraper."""
+    in_path = project_root / CONFIG["INPUT_CSV"]
+    out_path = project_root / CONFIG["OUTPUT_CSV"]
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    return in_path, out_path
 
 
 def clean_whitespace(s: str) -> str:
@@ -426,7 +444,7 @@ def _should_skip(node: Tag) -> bool:
 
 
 def _looks_like_qa_after(texts: List[str], start_idx: int, window: int = 30) -> bool:
-    """Heuristic check for Q&A-like patterns within a short window after a candidate section boundary."""
+    """Return True if Q&A-like markers appear shortly after a candidate Q&A header."""
     end = min(len(texts), start_idx + window)
     for j in range(start_idx + 1, end):
         t = texts[j]
@@ -508,7 +526,7 @@ def extract_statement_and_qa(soup: BeautifulSoup, subtitle_node: Optional[Tag] =
 
 
 def clean_statement_text(text: str) -> str:
-    """Apply a sequence of cleanup rules to keep only the speech body of the introductory statement."""
+    """Apply cleanup rules to keep only the speech body of the introductory statement."""
     t = strip_qa_leadin_from_statement(text)
     t = strip_statement_heading(t)
     t = strip_start_boilerplate(t)
@@ -524,7 +542,7 @@ def clean_qa_text(text: str) -> str:
 
 
 def build_session() -> requests.Session:
-    """Create a requests session configured with retry/backoff for resilient scraping."""
+    """Return a requests session configured with retry/backoff."""
     session = requests.Session()
     retry = Retry(
         total=6,
@@ -540,7 +558,7 @@ def build_session() -> requests.Session:
 
 
 def read_urls_and_dates(csv_path: Path) -> Tuple[List[str], Dict[str, str]]:
-    """Load transcript URLs (and optional URL→date mapping) from the input CSV file."""
+    """Return (urls, url_to_date) loaded from the input CSV (date map is optional)."""
     if not csv_path.exists():
         raise FileNotFoundError(f"Input introuvable: {csv_path}")
 
@@ -561,7 +579,7 @@ def read_urls_and_dates(csv_path: Path) -> Tuple[List[str], Dict[str, str]]:
 
 
 def scrape_one(session: requests.Session, url: str, headers: Dict[str, str], timeout: Tuple[int, int]) -> Dict[str, str]:
-    """Download one transcript page, extract metadata and split/clean statement and Q&A text."""
+    """Download one page and return extracted fields for the output dataset row."""
     r = session.get(url, timeout=timeout, headers=headers)
     r.raise_for_status()
     soup = BeautifulSoup(r.text, "html.parser")
@@ -585,30 +603,21 @@ def scrape_one(session: requests.Session, url: str, headers: Dict[str, str], tim
     }
 
 
-def main() -> None:
-    """Run the scraping loop over all URLs and persist the extracted transcripts to a CSV file."""
-    # IMPORTANT: project root is the parent of the replication/ folder.
-    scripts_dir = Path(__file__).resolve().parent          # .../replication
-    project_root = scripts_dir.parent                      # .../ (repo root)
+def iter_urls(urls: List[str], start_index: int, max_urls: Optional[int]) -> List[str]:
+    """Return the sliced URL list according to start index and optional max count."""
+    u = urls[int(start_index or 0):]
+    return u if max_urls is None else u[: int(max_urls)]
 
-    input_path = project_root / CONFIG["INPUT_CSV"]
-    output_path = project_root / CONFIG["OUTPUT_CSV"]
-    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    headers = {"User-Agent": CONFIG["USER_AGENT"]}
-    timeout = (CONFIG["TIMEOUT_CONNECT"], CONFIG["TIMEOUT_READ"])
-
-    print(f"Input : {input_path}")
-    urls, date_map = read_urls_and_dates(input_path)
-
-    start = int(CONFIG["START_INDEX"] or 0)
-    urls = urls[start:]
-    if CONFIG["MAX_URLS"] is not None:
-        urls = urls[: int(CONFIG["MAX_URLS"])]
-
-    print(f"Loaded {len(urls)} transcript URLs (start_index={start})")
+def scrape_all(
+    urls: List[str],
+    date_map: Dict[str, str],
+    headers: Dict[str, str],
+    timeout: Tuple[int, int],
+    verbose_every: int,
+) -> List[Dict[str, str]]:
+    """Scrape all pages, returning one output row per URL and keeping failures with an error field."""
     session = build_session()
-
     rows: List[Dict[str, str]] = []
     total = len(urls)
 
@@ -619,7 +628,7 @@ def main() -> None:
                 row["date"] = date_map.get(url, "")
             rows.append(row)
 
-            if CONFIG["VERBOSE_EVERY"] and (i % int(CONFIG["VERBOSE_EVERY"]) == 0):
+            if verbose_every and (i % int(verbose_every) == 0):
                 print(
                     f"[{i}/{total}] OK  date={row['date'] or 'NA'}  method={row['method']}  "
                     f"statement_len={len(row['statement_text'])}  qa_len={len(row['qa_text'])}",
@@ -642,15 +651,49 @@ def main() -> None:
             )
             print(f"[{i}/{total}] FAIL {url} -> {err}", flush=True)
 
+    return rows
+
+
+def write_output(rows: List[Dict[str, str]], output_path: Path) -> pd.DataFrame:
+    """Write the final dataset to CSV and return it as a dataframe."""
     df = pd.DataFrame(rows)
     df.to_csv(output_path, index=False, encoding="utf-8")
+    return df
 
+
+def print_summary(df: pd.DataFrame, output_path: Path) -> None:
+    """Print basic dataset diagnostics after writing output."""
     non_empty_qa = int((df["qa_text"].fillna("").str.len() > 0).sum()) if len(df) else 0
     failed = int((df["method"] == "fail").sum()) if len(df) else 0
-
     print(f"Saved {len(df)} rows to {output_path}")
     print(f"Rows with non-empty Q&A: {non_empty_qa}/{len(df)}")
     print(f"Failed rows kept in CSV: {failed}")
+
+
+def main() -> None:
+    """Execute the scraping pipeline and save the final transcripts dataset."""
+    project_root = get_project_root()
+    input_path, output_path = resolve_paths(project_root)
+
+    headers = {"User-Agent": CONFIG["USER_AGENT"]}
+    timeout = (CONFIG["TIMEOUT_CONNECT"], CONFIG["TIMEOUT_READ"])
+
+    print(f"Input : {input_path}")
+    urls, date_map = read_urls_and_dates(input_path)
+
+    urls = iter_urls(urls, start_index=int(CONFIG["START_INDEX"] or 0), max_urls=CONFIG["MAX_URLS"])
+    print(f"Loaded {len(urls)} transcript URLs (start_index={CONFIG['START_INDEX']})")
+
+    rows = scrape_all(
+        urls=urls,
+        date_map=date_map,
+        headers=headers,
+        timeout=timeout,
+        verbose_every=int(CONFIG["VERBOSE_EVERY"] or 0),
+    )
+
+    df = write_output(rows, output_path)
+    print_summary(df, output_path)
 
 
 if __name__ == "__main__":

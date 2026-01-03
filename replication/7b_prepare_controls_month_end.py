@@ -1,8 +1,11 @@
 # 7b_prepare_controls_month_end.py
 # Build monthly control variables aligned to end-of-month (EOM) timing for event-study regressions.
 # I/O:
-#   Inputs: data_raw/AMECO-AVGDGP-EA12.csv, data_raw/HICP_data_base100_2005.csv, data_raw/MRO.csv.
-#   Outputs: data_clean/controls_month_end.csv with monthly controls (HICP, inflation, annual output gap, EOM MRO level, and EOM delta).
+#   Inputs : data_raw/AMECO-AVGDGP-EA12.csv, data_raw/HICP_data_base100_2005.csv, data_raw/MRO.csv
+#   Outputs: data_clean/controls_month_end.csv with monthly controls (hicp, inflation, output_gap, mro_level_eom, delta_mro_eom)
+# Notes:
+#   The script parses the three raw sources, computes YoY inflation from HICP, keeps MRO at month-end,
+#   merges annual output gap by year, and exports a single monthly controls table.
 
 from __future__ import annotations
 
@@ -11,30 +14,56 @@ from pathlib import Path
 import pandas as pd
 
 
-def parse_one_col_semicolon(path: Path, col_names):
-    """Parse files that may store semicolon-separated fields inside a single CSV column."""
+def get_project_root() -> Path:
+    """Return repository root (script is in replication/)."""
+    scripts_dir = Path(__file__).resolve().parent
+    return scripts_dir.parent
+
+
+def resolve_paths(project_root: Path) -> tuple[Path, Path, Path, Path]:
+    """Return (raw_dir, clean_dir, og_path, hicp_path, mro_path) paths for the controls build."""
+    raw_dir = project_root / "data_raw"
+    clean_dir = project_root / "data_clean"
+    clean_dir.mkdir(parents=True, exist_ok=True)
+    return (
+        raw_dir,
+        clean_dir,
+        raw_dir / "AMECO-AVGDGP-EA12.csv",
+        raw_dir / "HICP_data_base100_2005.csv",
+        raw_dir / "MRO.csv",
+    )
+
+
+def parse_one_col_semicolon(path: Path, col_names: list[str]) -> pd.DataFrame:
+    """Parse CSVs that may store semicolon-separated fields inside a single column."""
     df = pd.read_csv(path)
-    if df.shape[1] == 1:
-        col = df.columns[0]
-        tmp = df[col].astype(str).str.split(";", n=len(col_names) - 1, expand=True)
-        tmp.columns = col_names
-        return tmp
-    return df
+    if df.shape[1] != 1:
+        return df
+    col = df.columns[0]
+    tmp = df[col].astype(str).str.split(";", n=len(col_names) - 1, expand=True)
+    tmp.columns = col_names
+    return tmp
+
+
+def require_files(paths: list[Path]) -> None:
+    """Raise FileNotFoundError if any required input file is missing."""
+    missing = [p for p in paths if not p.exists()]
+    if missing:
+        raise FileNotFoundError("Missing required input file(s):\n" + "\n".join(f"  - {p}" for p in missing))
 
 
 def load_output_gap_annual(path: Path) -> pd.DataFrame:
-    """Load annual output gap by year from an AMECO-style CSV and return columns (year, output_gap)."""
+    """Load annual output gap from AMECO-like CSV and return columns (year, output_gap)."""
     tmp = parse_one_col_semicolon(path, ["period", "output_gap"])
     tmp["year"] = pd.to_numeric(tmp["period"], errors="coerce")
     tmp["output_gap"] = pd.to_numeric(tmp["output_gap"], errors="coerce")
     out = tmp.dropna(subset=["year", "output_gap"]).copy()
     out["year"] = out["year"].astype(int)
-    out = out[["year", "output_gap"]].drop_duplicates("year").sort_values("year")
-    return out
+    return out[["year", "output_gap"]].drop_duplicates("year").sort_values("year")
 
 
 def load_hicp_monthly(path: Path) -> pd.DataFrame:
-    """Load monthly HICP index (YYYY-MM) and compute YoY inflation, returning (date_m, hicp, inflation)."""
+    """Load monthly HICP (YYYY-MM) and compute YoY inflation, returning (date_m, hicp, inflation)."""
     tmp = parse_one_col_semicolon(path, ["TIME_PERIOD", "OBS_VALUE"])
     tmp["date_m"] = pd.to_datetime(tmp["TIME_PERIOD"], format="%Y-%m", errors="coerce")
     tmp["hicp"] = pd.to_numeric(tmp["OBS_VALUE"], errors="coerce")
@@ -46,54 +75,56 @@ def load_hicp_monthly(path: Path) -> pd.DataFrame:
 
 
 def load_mro_daily(path: Path) -> pd.DataFrame:
-    """Load daily MRO level from CSV and return columns (date, mro_level) with numeric types."""
+    """Load daily MRO from CSV and return columns (date, mro_level)."""
     mro = pd.read_csv(path)
     rate_col = next(c for c in mro.columns if "Main refinancing operations" in c)
     mro["date"] = pd.to_datetime(mro["DATE"], errors="coerce")
     mro["mro_level"] = pd.to_numeric(mro[rate_col], errors="coerce")
-    mro = mro.dropna(subset=["date", "mro_level"]).sort_values("date").copy()
+    mro = mro.dropna(subset=["date", "mro_level"]).sort_values("date")
     return mro[["date", "mro_level"]]
 
 
-def main() -> None:
-    """Assemble monthly controls by merging HICP, annual output gap, and end-of-month MRO levels into one CSV."""
-    scripts_dir = Path(__file__).resolve().parent   # .../replication
-    project_root = scripts_dir.parent               # .../ (repo root)
+def build_mro_eom(mro_daily: pd.DataFrame) -> pd.DataFrame:
+    """Convert daily MRO to end-of-month level and month-to-month delta."""
+    m = mro_daily.copy()
+    m["date_m"] = m["date"].dt.to_period("M").dt.to_timestamp()
+    eom = m.sort_values("date").groupby("date_m", as_index=False).last()
+    eom = eom.rename(columns={"mro_level": "mro_level_eom"})[["date_m", "mro_level_eom"]].sort_values("date_m")
+    eom["delta_mro_eom"] = eom["mro_level_eom"].diff()
+    return eom
 
-    data_raw = project_root / "data_raw"
-    data_clean = project_root / "data_clean"
-    data_clean.mkdir(parents=True, exist_ok=True)
 
-    og_path = data_raw / "AMECO-AVGDGP-EA12.csv"
-    hicp_path = data_raw / "HICP_data_base100_2005.csv"
-    mro_path = data_raw / "MRO.csv"
-
-    if not og_path.exists():
-        raise FileNotFoundError(f"Missing: {og_path}")
-    if not hicp_path.exists():
-        raise FileNotFoundError(f"Missing: {hicp_path}")
-    if not mro_path.exists():
-        raise FileNotFoundError(f"Missing: {mro_path}")
-
-    output_gap = load_output_gap_annual(og_path)
-    hicp = load_hicp_monthly(hicp_path)
-    mro = load_mro_daily(mro_path)
-
-    mro_m = mro.copy()
-    mro_m["date_m"] = mro_m["date"].dt.to_period("M").dt.to_timestamp()
-    mro_eom = mro_m.sort_values("date").groupby("date_m", as_index=False).last()
-    mro_eom = mro_eom.rename(columns={"mro_level": "mro_level_eom"})[["date_m", "mro_level_eom"]]
-    mro_eom = mro_eom.sort_values("date_m").copy()
-    mro_eom["delta_mro_eom"] = mro_eom["mro_level_eom"].diff()
-
+def merge_controls(hicp: pd.DataFrame, mro_eom: pd.DataFrame, output_gap: pd.DataFrame) -> pd.DataFrame:
+    """Merge HICP, MRO (EOM), and annual output gap into a monthly controls dataframe."""
     controls = hicp.merge(mro_eom, on="date_m", how="left")
     controls["year"] = controls["date_m"].dt.year
     controls["month"] = controls["date_m"].dt.month
     controls = controls.merge(output_gap, on="year", how="left")
-    controls = controls[controls["date_m"] >= "1999-01-01"].copy()
+    return controls.loc[controls["date_m"] >= "1999-01-01"].copy()
 
-    out_path = data_clean / "controls_month_end.csv"
-    controls.to_csv(out_path, index=False, encoding="utf-8")
+
+def write_output(df: pd.DataFrame, clean_dir: Path) -> Path:
+    """Write controls_month_end.csv to data_clean and return the written path."""
+    out_path = clean_dir / "controls_month_end.csv"
+    df.to_csv(out_path, index=False, encoding="utf-8")
+    return out_path
+
+
+def main() -> None:
+    """Execute controls construction and write data_clean/controls_month_end.csv."""
+    project_root = get_project_root()
+    raw_dir, clean_dir, og_path, hicp_path, mro_path = resolve_paths(project_root)
+
+    require_files([og_path, hicp_path, mro_path])
+
+    output_gap = load_output_gap_annual(og_path)
+    hicp = load_hicp_monthly(hicp_path)
+    mro_daily = load_mro_daily(mro_path)
+
+    mro_eom = build_mro_eom(mro_daily)
+    controls = merge_controls(hicp, mro_eom, output_gap)
+
+    out_path = write_output(controls, clean_dir)
     print(f"Saved: {out_path}")
 
 

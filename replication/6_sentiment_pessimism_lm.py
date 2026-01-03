@@ -2,8 +2,14 @@
 # Compute ECB pessimism using the Loughran–McDonald dictionary:
 #   Pessimism = (Negative - Positive) / TotalWords.
 # I/O:
-#   Inputs: data_clean/ecb_statements_preprocessed.csv (requires tokens_clean_str) and data_raw/Loughran-McDonald_MasterDictionary_1993-2024.csv.
-#   Outputs: data_clean/ecb_pessimism_lm.csv, data_clean/ecb_statements_with_pessimism.csv, and (optional) outputs/pessimism_lm_<START>_<END>.png.
+#   Inputs: data_clean/ecb_statements_preprocessed.csv (requires tokens_clean_str)
+#           data_raw/Loughran-McDonald_MasterDictionary_1993-2024.csv
+#   Outputs: data_clean/ecb_pessimism_lm.csv
+#            data_clean/ecb_statements_with_pessimism.csv
+#            (optional) outputs/plots/pessimism_lm_<START>_<END>.png
+# Notes:
+#   The script deduplicates by date (keeps longest text), computes LM counts and pessimism for all dates,
+#   then optionally plots pessimism within the env window (ECB_START_DATE/ECB_END_DATE).
 
 from __future__ import annotations
 
@@ -20,7 +26,7 @@ CONFIG = {
     "LM_DICTIONARY_CSV": "data_raw/Loughran-McDonald_MasterDictionary_1993-2024.csv",
     "OUTPUT_PESSIMISM_CSV": "data_clean/ecb_pessimism_lm.csv",
     "OUTPUT_MERGED_CSV": "data_clean/ecb_statements_with_pessimism.csv",
-    "OUTPUT_DIR": "outputs",
+    "OUTPUT_DIR": "outputs/plots",
     "DEFAULT_START_DATE": "1999-01-01",
     "DEFAULT_END_DATE": "2013-12-31",
     "PLOT": True,
@@ -30,8 +36,14 @@ CONFIG = {
 }
 
 
+def get_project_root() -> Path:
+    """Return repository root (script is in replication/)."""
+    scripts_dir = Path(__file__).resolve().parent
+    return scripts_dir.parent
+
+
 def get_window_from_env() -> tuple[pd.Timestamp, pd.Timestamp, str, str]:
-    """Read (start, end) plot window from env (or defaults) and return parsed timestamps plus the original strings."""
+    """Return (start_dt, end_dt, start_str, end_str) from env (or defaults)."""
     start_str = os.getenv("ECB_START_DATE", CONFIG["DEFAULT_START_DATE"])
     end_str = os.getenv("ECB_END_DATE", CONFIG["DEFAULT_END_DATE"])
     start_dt = pd.Timestamp(start_str)
@@ -41,8 +53,62 @@ def get_window_from_env() -> tuple[pd.Timestamp, pd.Timestamp, str, str]:
     return start_dt, end_dt, start_str, end_str
 
 
-def load_lm_sets(lm_path: Path) -> tuple[set, set]:
-    """Load the LM dictionary CSV and return lowercase sets of negative and positive words."""
+def resolve_paths(project_root: Path) -> dict[str, Path]:
+    """Build all input/output paths used by the script."""
+    return {
+        "in_csv": project_root / CONFIG["INPUT_CSV"],
+        "lm_csv": project_root / CONFIG["LM_DICTIONARY_CSV"],
+        "out_pess": project_root / CONFIG["OUTPUT_PESSIMISM_CSV"],
+        "out_merged": project_root / CONFIG["OUTPUT_MERGED_CSV"],
+        "out_plots": project_root / CONFIG["OUTPUT_DIR"],
+    }
+
+
+def validate_inputs(paths: dict[str, Path]) -> None:
+    """Check required input files exist before processing."""
+    if not paths["in_csv"].exists():
+        raise FileNotFoundError(
+            f"Missing input: {paths['in_csv']}\n"
+            "Run preprocess first to generate ecb_statements_preprocessed.csv"
+        )
+    if not paths["lm_csv"].exists():
+        raise FileNotFoundError(f"Missing LM dictionary: {paths['lm_csv']}")
+
+
+def load_preprocessed(in_path: Path) -> pd.DataFrame:
+    """Load preprocessed statements and validate required columns."""
+    df = pd.read_csv(in_path)
+    if "date" not in df.columns:
+        raise ValueError("Missing 'date' column in ecb_statements_preprocessed.csv")
+    if "tokens_clean_str" not in df.columns:
+        raise ValueError(
+            "Missing 'tokens_clean_str' in preprocessed data.\n"
+            "LM pessimism must be computed on cleaned tokens (tokens_clean_str), not stems."
+        )
+    return df
+
+
+def preprocess_statements(df: pd.DataFrame, text_col: str = "tokens_clean_str") -> pd.DataFrame:
+    """Parse dates, drop invalid rows, and deduplicate by date (keep longest text)."""
+    d = df.copy()
+    d["date"] = pd.to_datetime(d["date"], errors="coerce")
+    d = d[d["date"].notna()].copy()
+    if len(d) == 0:
+        raise ValueError("No valid dated rows in input after parsing 'date'.")
+
+    d[text_col] = d[text_col].fillna("").astype(str)
+    d["len_for_dedupe"] = d[text_col].apply(lambda s: len(s.split()))
+    d = (
+        d.sort_values(["date", "len_for_dedupe"], ascending=[True, False])
+         .drop_duplicates(subset=["date"], keep="first")
+         .sort_values("date")
+         .reset_index(drop=True)
+    )
+    return d
+
+
+def load_lm_sets(lm_path: Path) -> tuple[set[str], set[str]]:
+    """Load LM dictionary and return lowercase sets of negative and positive words."""
     lm = pd.read_csv(lm_path)
 
     if "Word" not in lm.columns:
@@ -51,14 +117,13 @@ def load_lm_sets(lm_path: Path) -> tuple[set, set]:
         raise ValueError(f"LM dictionary missing 'Negative'/'Positive' columns: {lm_path}")
 
     lm["Word"] = lm["Word"].astype(str).str.strip().str.lower()
-
     neg_set = set(lm.loc[pd.to_numeric(lm["Negative"], errors="coerce").fillna(0).astype(int) > 0, "Word"])
     pos_set = set(lm.loc[pd.to_numeric(lm["Positive"], errors="coerce").fillna(0).astype(int) > 0, "Word"])
     return neg_set, pos_set
 
 
-def count_sentiment(tokens_str: str, neg_set: set, pos_set: set):
-    """Count LM negative/positive tokens and return (neg, pos, total, pessimism) for a token string."""
+def count_sentiment(tokens_str: str, neg_set: set[str], pos_set: set[str]) -> tuple[int, int, int, float | None]:
+    """Return (neg, pos, total, pessimism) for one token string."""
     if not isinstance(tokens_str, str) or tokens_str.strip() == "":
         return 0, 0, 0, None
 
@@ -70,125 +135,97 @@ def count_sentiment(tokens_str: str, neg_set: set, pos_set: set):
     c = Counter(tokens)
     neg = sum(freq for w, freq in c.items() if w in neg_set)
     pos = sum(freq for w, freq in c.items() if w in pos_set)
-    pessimism = (neg - pos) / total
-    return neg, pos, total, pessimism
+    return neg, pos, total, (neg - pos) / total
 
 
-def main() -> None:
-    """Compute LM-based pessimism for the full dataset, save outputs, and optionally plot within a date window."""
-    scripts_dir = Path(__file__).resolve().parent   # .../replication
-    project_root = scripts_dir.parent               # .../ (repo root)
-
-    in_path = project_root / CONFIG["INPUT_CSV"]
-    lm_path = project_root / CONFIG["LM_DICTIONARY_CSV"]
-
-    if not in_path.exists():
-        raise FileNotFoundError(
-            f"Missing input: {in_path}\n"
-            "Run preprocess first to generate ecb_statements_preprocessed.csv"
-        )
-
-    if not lm_path.exists():
-        raise FileNotFoundError(f"Missing LM dictionary: {lm_path}")
-
-    print(f"Using input: {in_path}")
-    print(f"Using LM dict: {lm_path.name}")
-
-    df_all = pd.read_csv(in_path)
-
-    if "date" not in df_all.columns:
-        raise ValueError("Missing 'date' column in ecb_statements_preprocessed.csv")
-
-    if "tokens_clean_str" not in df_all.columns:
-        raise ValueError(
-            "Missing 'tokens_clean_str' in preprocessed data.\n"
-            "LM pessimism must be computed on cleaned tokens (tokens_clean_str), not stems."
-        )
-
-    df_all = df_all.copy()
-    df_all["date"] = pd.to_datetime(df_all["date"], errors="coerce")
-    df_all = df_all[df_all["date"].notna()].copy()
-
-    text_col = "tokens_clean_str"
-    df_all[text_col] = df_all[text_col].fillna("").astype(str)
-
-    if len(df_all) == 0:
-        raise ValueError("No valid dated rows in input after parsing 'date'.")
-
-    df_all["len_for_dedupe"] = df_all[text_col].apply(lambda s: len(s.split()))
-    df_all = (
-        df_all.sort_values(["date", "len_for_dedupe"], ascending=[True, False])
-              .drop_duplicates(subset=["date"], keep="first")
-              .sort_values("date")
-              .reset_index(drop=True)
-    )
-    print(f"Rows in FULL sample (post-dedupe): {len(df_all)}")
-
-    neg_set, pos_set = load_lm_sets(lm_path)
-
-    results = df_all[text_col].apply(lambda s: count_sentiment(s, neg_set, pos_set))
-    df_all["lm_negative"] = results.apply(lambda x: x[0])
-    df_all["lm_positive"] = results.apply(lambda x: x[1])
-    df_all["lm_total"] = results.apply(lambda x: x[2])
-    df_all["pessimism_lm"] = results.apply(lambda x: x[3])
+def compute_pessimism(df: pd.DataFrame, neg_set: set[str], pos_set: set[str], text_col: str) -> pd.DataFrame:
+    """Add LM counts and pessimism columns to the dataframe."""
+    d = df.copy()
+    res = d[text_col].apply(lambda s: count_sentiment(s, neg_set, pos_set))
+    d["lm_negative"] = res.apply(lambda x: x[0])
+    d["lm_positive"] = res.apply(lambda x: x[1])
+    d["lm_total"] = res.apply(lambda x: x[2])
+    d["pessimism_lm"] = res.apply(lambda x: x[3])
 
     if CONFIG["ADD_PCT_VERSION"]:
-        df_all["pessimism_lm_pct"] = df_all["pessimism_lm"] * 100.0
+        d["pessimism_lm_pct"] = d["pessimism_lm"] * 100.0
 
+    return d
+
+
+def save_outputs(df_all: pd.DataFrame, out_pess: Path, out_merged: Path) -> None:
+    """Write the full-sample pessimism file and the merged statements file."""
     keep_meta = [c for c in ["date", "url", "title", "subtitle", "method"] if c in df_all.columns]
     out_cols = keep_meta + ["lm_negative", "lm_positive", "lm_total", "pessimism_lm"]
     if CONFIG["ADD_PCT_VERSION"]:
         out_cols.append("pessimism_lm_pct")
 
-    out_path = project_root / CONFIG["OUTPUT_PESSIMISM_CSV"]
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
+    out_pess.parent.mkdir(parents=True, exist_ok=True)
     out_df = df_all[out_cols].copy()
     out_df["date"] = pd.to_datetime(out_df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
-    out_df.to_csv(out_path, index=False, encoding="utf-8")
-    print(f"Saved FULL sample: {out_path}")
+    out_df.to_csv(out_pess, index=False, encoding="utf-8")
+    print(f"Saved FULL sample: {out_pess}")
 
-    merged_path = project_root / CONFIG["OUTPUT_MERGED_CSV"]
-    merged_path.parent.mkdir(parents=True, exist_ok=True)
+    out_merged.parent.mkdir(parents=True, exist_ok=True)
+    merged = df_all.copy()
+    merged["date"] = pd.to_datetime(merged["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    merged.to_csv(out_merged, index=False, encoding="utf-8")
+    print(f"Saved merged FULL sample: {out_merged}")
 
-    df2 = df_all.copy()
-    df2["date"] = pd.to_datetime(df2["date"], errors="coerce").dt.strftime("%Y-%m-%d")
-    df2.to_csv(merged_path, index=False, encoding="utf-8")
-    print(f"Saved merged FULL sample: {merged_path}")
+
+def plot_window(df_all: pd.DataFrame, out_dir: Path) -> None:
+    """Plot pessimism over the env window and save PNG to outputs/plots."""
+    start_dt, end_dt, start_str, end_str = get_window_from_env()
+
+    w = df_all[
+        (df_all["date"] >= start_dt) &
+        (df_all["date"] <= end_dt) &
+        (df_all["pessimism_lm"].notna())
+    ].copy()
+
+    if len(w) == 0:
+        raise ValueError(f"No valid pessimism values to plot in window {start_str}–{end_str}.")
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    w = w.sort_values("date")
+    print(f"Plot observations: {len(w)}")
+
+    plt.figure()
+    plt.plot(w["date"], w["pessimism_lm"], linewidth=1)
+    plt.title(f"ECB pessimism (Loughran–McDonald), {start_str}–{end_str}")
+    plt.xlabel("Date")
+    plt.ylabel("Pessimism")
+    plt.tight_layout()
+
+    fig_path = out_dir / f"pessimism_lm_{start_str.replace('-', '')}_{end_str.replace('-', '')}.png"
+    plt.savefig(fig_path, dpi=int(CONFIG["PLOT_DPI"]))
+    if CONFIG["SHOW_PLOT"]:
+        plt.show()
+    else:
+        plt.close()
+    print(f"Saved plot (window-only): {fig_path}")
+
+
+def main() -> None:
+    """Execute the full pessimism pipeline."""
+    project_root = get_project_root()
+    paths = resolve_paths(project_root)
+    validate_inputs(paths)
+
+    print(f"Using input: {paths['in_csv']}")
+    print(f"Using LM dict: {paths['lm_csv'].name}")
+
+    df_raw = load_preprocessed(paths["in_csv"])
+    df_all = preprocess_statements(df_raw, text_col="tokens_clean_str")
+    print(f"Rows in FULL sample (post-dedupe): {len(df_all)}")
+
+    neg_set, pos_set = load_lm_sets(paths["lm_csv"])
+    df_all = compute_pessimism(df_all, neg_set, pos_set, text_col="tokens_clean_str")
+
+    save_outputs(df_all, paths["out_pess"], paths["out_merged"])
 
     if CONFIG["PLOT"]:
-        out_dir = project_root / CONFIG["OUTPUT_DIR"]
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        start_dt, end_dt, start_str, end_str = get_window_from_env()
-
-        w_plot = df_all[
-            (df_all["date"] >= start_dt) &
-            (df_all["date"] <= end_dt) &
-            (df_all["pessimism_lm"].notna())
-        ].copy()
-
-        if len(w_plot) == 0:
-            raise ValueError(f"No valid pessimism values to plot in window {start_str}–{end_str}.")
-
-        w_plot = w_plot.sort_values("date")
-        print(f"Plot observations: {len(w_plot)}")
-
-        plt.figure()
-        plt.plot(w_plot["date"], w_plot["pessimism_lm"], linewidth=1)
-        plt.title(f"ECB pessimism (Loughran–McDonald), {start_str}–{end_str}")
-        plt.xlabel("Date")
-        plt.ylabel("Pessimism")
-        plt.tight_layout()
-
-        fig_path = out_dir / f"pessimism_lm_{start_str.replace('-', '')}_{end_str.replace('-', '')}.png"
-        plt.savefig(fig_path, dpi=int(CONFIG["PLOT_DPI"]))
-        if CONFIG["SHOW_PLOT"]:
-            plt.show()
-        else:
-            plt.close()
-
-        print(f"Saved plot (window-only): {fig_path}")
+        plot_window(df_all, paths["out_plots"])
 
 
 if __name__ == "__main__":
