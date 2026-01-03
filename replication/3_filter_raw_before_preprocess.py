@@ -5,7 +5,7 @@
 #   Outputs: data_raw/ecb_statements_raw_filtered.csv (kept rows)
 #            data_raw/ecb_statements_raw_removed.csv (dropped rows report)
 # Notes:
-#   The script applies hard-coded exclusion rules (by date+title, title, or subtitle) and writes both
+#   The script applies hard-coded exclusion rules (by date+title, title, or subtitle) to scraped statements to match the papers and writes both
 #   the cleaned dataset and a report of removed rows with a drop_reason.
 
 from __future__ import annotations
