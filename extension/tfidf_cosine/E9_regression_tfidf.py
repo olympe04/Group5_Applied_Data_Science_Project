@@ -8,6 +8,10 @@
 # Notes:
 #   Loads the TF-IDF similarity series, merges it with CAR/pessimism and monthly controls inside the env window
 #   (ECB_START_DATE/ECB_END_DATE), runs the OLS specs, and writes formatted tables only.
+#
+# CHANGE (requested):
+#   Table 4 specs now EXCLUDE the main effect of similarity (log or z) and KEEP ONLY the interaction term:
+#     Pessimism × similarity.
 
 from __future__ import annotations
 
@@ -29,10 +33,11 @@ CFG = {
 }
 
 T3_ORDER = ["Intercept", "Time", "Time (count)", "Output gap", "Inflation", "Delta MRO", "Adjusted R2"]
+
+# --- UPDATED orders (similarity main effect removed) ---
 T4_LOG_ORDER = [
     "Intercept",
     "Pessimism",
-    "Similarity (log)",
     "Pessimism × similarity",
     "Output gap",
     "Inflation",
@@ -42,7 +47,6 @@ T4_LOG_ORDER = [
 T4_Z_ORDER = [
     "Intercept",
     "Pessimism",
-    "Similarity (z)",
     "Pessimism × similarity",
     "Output gap",
     "Inflation",
@@ -227,7 +231,9 @@ def run_table4(
         .merge(sim, on="date", how="left")
     )
 
-    # ---- LOG(sim) version (requires sim>0 for log) ----
+    # -------------------------
+    # LOG(sim) version (sim>0)
+    # -------------------------
     dfl = df.query("sim_tfidf > 0").copy()
     if len(dfl) == 0:
         raise ValueError(f"[Table4 log] No observations with sim_tfidf > 0 in {s}..{e}")
@@ -235,18 +241,18 @@ def run_table4(
     dfl["log_similarity"] = np.log(dfl["sim_tfidf"])
     dfl["pess_x_logsim"] = dfl["pessimism_lm_pct"] * dfl["log_similarity"]
 
+    # --- UPDATED specs (no log_similarity main effect) ---
     specs_log = {
         "(1)": ["pessimism_lm_pct"],
         "(2)": controls,
-        "(3)": ["pessimism_lm_pct", "log_similarity", "pess_x_logsim"],
-        "(4)": ["pessimism_lm_pct", "log_similarity", "pess_x_logsim"] + controls,
+        "(3)": ["pessimism_lm_pct", "pess_x_logsim"],
+        "(4)": ["pessimism_lm_pct", "pess_x_logsim"] + controls,
     }
 
     def col_log(m):
         return {
             "Intercept": fmt(m, "const"),
             "Pessimism": fmt(m, "pessimism_lm_pct"),
-            "Similarity (log)": fmt(m, "log_similarity"),
             "Pessimism × similarity": fmt(m, "pess_x_logsim"),
             "Output gap": fmt(m, "output_gap"),
             "Inflation": fmt(m, "inflation"),
@@ -265,7 +271,9 @@ def run_table4(
     print(f"[Table4 TF-IDF log] Window: {s}->{e} | n={len(df)} | n(sim>0)={len(dfl)}")
     print(table_log.reindex(T4_LOG_ORDER).to_string())
 
-    # ---- Z(sim) version (requires variation in sim) ----
+    # -------------------------
+    # Z(sim) version (any sim)
+    # -------------------------
     dfz = df.dropna(subset=["sim_tfidf"]).copy()
     ssim = pd.to_numeric(dfz["sim_tfidf"], errors="coerce")
     dfz = dfz.loc[ssim.notna()].copy()
@@ -279,16 +287,16 @@ def run_table4(
     dfz["z_sim_tfidf"] = (ssim - ssim.mean()) / sd
     dfz["pess_x_zsim"] = dfz["pessimism_lm_pct"] * dfz["z_sim_tfidf"]
 
+    # --- UPDATED specs (no z_sim_tfidf main effect) ---
     specs_z = {
-        "(3z)": ["pessimism_lm_pct", "z_sim_tfidf", "pess_x_zsim"],
-        "(4z)": ["pessimism_lm_pct", "z_sim_tfidf", "pess_x_zsim"] + controls,
+        "(3z)": ["pessimism_lm_pct", "pess_x_zsim"],
+        "(4z)": ["pessimism_lm_pct", "pess_x_zsim"] + controls,
     }
 
     def col_z(m):
         return {
             "Intercept": fmt(m, "const"),
             "Pessimism": fmt(m, "pessimism_lm_pct"),
-            "Similarity (z)": fmt(m, "z_sim_tfidf"),
             "Pessimism × similarity": fmt(m, "pess_x_zsim"),
             "Output gap": fmt(m, "output_gap"),
             "Inflation": fmt(m, "inflation"),
