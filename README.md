@@ -97,10 +97,12 @@ project_root/
 │  └─ 9_summary_table2.py
 │
 ├─ extension/
-│  ├─ main.py                         # TF-IDF cosine extension orchestrator
-│  ├─ E5_tfidf_cosine.py
-│  ├─ E8_merge_car_pessimism_similarity.py
-│  ├─ E9_tfidf_tables_concise.py
+│
+│  ├─ tfidf_cosine/
+│  │  ├─ main.py                      # TF-IDF cosine extension orchestrator
+│  │  ├─ E5_tfidf_cosine.py
+│  │  ├─ E8_merge_car_pessimism_similarity.py
+│  │  └─ E9_tfidf_tables_concise.py
 │  │
 │  ├─ uncertainty/
 │  │  ├─ main.py                      # uncertainty-only pipeline orchestrator
@@ -194,7 +196,7 @@ Runs scripts in dependency order and propagates the window via:
 
 ### 1) TF-IDF cosine similarity (extension baseline)
 
-Orchestrator: `extension/main.py`
+Orchestrator: `extension/tfidf_cosine/main.py`
 
 Outputs (examples):
 - `data_features/ecb_similarity_tfidf.csv`
