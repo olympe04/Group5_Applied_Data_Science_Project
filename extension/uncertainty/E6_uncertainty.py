@@ -4,8 +4,8 @@
 # I/O:
 #   Inputs: data_clean/ecb_statements_preprocessed.csv (requires tokens_clean_str)
 #           data_raw/Loughran-McDonald_MasterDictionary_1993-2024.csv
-#   Outputs: data_clean/ecb_uncertainty_lm.csv
-#            data_clean/ecb_statements_with_uncertainty.csv
+#   Outputs: data_features/ecb_uncertainty_lm.csv
+#            data_features/ecb_statements_with_uncertainty.csv
 #            (optional) outputs/plots/uncertainty_lm_<START>_<END>.png
 # Notes:
 #   The script deduplicates by date (keeps longest text), computes LM uncertainty counts for all dates,
@@ -24,8 +24,8 @@ import pandas as pd
 CONFIG = {
     "INPUT_CSV": "data_clean/ecb_statements_preprocessed.csv",
     "LM_DICTIONARY_CSV": "data_raw/Loughran-McDonald_MasterDictionary_1993-2024.csv",
-    "OUTPUT_UNC_CSV": "data_clean/ecb_uncertainty_lm.csv",
-    "OUTPUT_MERGED_CSV": "data_clean/ecb_statements_with_uncertainty.csv",
+    "OUTPUT_UNC_CSV": "data_features/ecb_uncertainty_lm.csv",                # <- changed
+    "OUTPUT_MERGED_CSV": "data_features/ecb_statements_with_uncertainty.csv", # <- changed
     "OUTPUT_DIR": "outputs/plots",
     "DEFAULT_START_DATE": "1999-01-01",
     "DEFAULT_END_DATE": "2013-12-31",
@@ -37,9 +37,19 @@ CONFIG = {
 
 
 def get_project_root() -> Path:
-    """Return repository root (script is in replication/)."""
-    scripts_dir = Path(__file__).resolve().parent
-    return scripts_dir.parent
+    """
+    Robustly find project root even if this script is moved into subfolders like:
+      <root>/extension/uncertainty/E6_uncertainty_lm.py
+
+    Strategy: walk up parents until we find expected root markers.
+    """
+    here = Path(__file__).resolve()
+    for p in [here] + list(here.parents):
+        if (p / "data_clean").exists() and (p / "outputs").exists():
+            return p
+    raise RuntimeError(
+        "Could not locate project root. Expected to find 'data_clean/' and 'outputs/' in a parent directory."
+    )
 
 
 def get_window_from_env() -> tuple[pd.Timestamp, pd.Timestamp, str, str]:
@@ -100,9 +110,9 @@ def preprocess_statements(df: pd.DataFrame, text_col: str = "tokens_clean_str") 
     d["len_for_dedupe"] = d[text_col].apply(lambda s: len(s.split()))
     d = (
         d.sort_values(["date", "len_for_dedupe"], ascending=[True, False])
-         .drop_duplicates(subset=["date"], keep="first")
-         .sort_values("date")
-         .reset_index(drop=True)
+        .drop_duplicates(subset=["date"], keep="first")
+        .sort_values("date")
+        .reset_index(drop=True)
     )
     return d
 
@@ -113,14 +123,11 @@ def load_lm_uncertainty_set(lm_path: Path) -> set[str]:
 
     if "Word" not in lm.columns:
         raise ValueError(f"LM dictionary missing 'Word' column: {lm_path}")
-    # Column name is typically "Uncertainty" in LM Master Dictionary
     if "Uncertainty" not in lm.columns:
         raise ValueError(f"LM dictionary missing 'Uncertainty' column: {lm_path}")
 
     lm["Word"] = lm["Word"].astype(str).str.strip().str.lower()
-    unc_set = set(
-        lm.loc[pd.to_numeric(lm["Uncertainty"], errors="coerce").fillna(0).astype(int) > 0, "Word"]
-    )
+    unc_set = set(lm.loc[pd.to_numeric(lm["Uncertainty"], errors="coerce").fillna(0).astype(int) > 0, "Word"])
     return unc_set
 
 
@@ -178,9 +185,9 @@ def plot_window(df_all: pd.DataFrame, out_dir: Path) -> None:
     start_dt, end_dt, start_str, end_str = get_window_from_env()
 
     w = df_all[
-        (df_all["date"] >= start_dt) &
-        (df_all["date"] <= end_dt) &
-        (df_all["uncertainty_lm"].notna())
+        (df_all["date"] >= start_dt)
+        & (df_all["date"] <= end_dt)
+        & (df_all["uncertainty_lm"].notna())
     ].copy()
 
     if len(w) == 0:

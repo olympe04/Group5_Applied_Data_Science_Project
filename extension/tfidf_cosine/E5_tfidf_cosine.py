@@ -1,17 +1,16 @@
 # E5_tfidf_cosine.py
-# Compute consecutive cosine similarity using TF-IDF representations.
+# Compute consecutive tfidf_cosine similarity using TF-IDF representations.
 # I/O:
 #   Inputs : data_clean/ecb_statements_preprocessed.csv
 #   Outputs: data_features/ecb_similarity_tfidf.csv,
 #            outputs/plots/ts_sim_tfidf.png
 # Notes:
 #   The script builds a TF-IDF matrix on the filtered corpus (date window from CLI/env/config),
-#   computes consecutive cosine similarity, saves the series, and exports a time-series plot.
+#   computes consecutive tfidf_cosine similarity, saves the series, and exports a time-series plot.
 
 from __future__ import annotations
 
 import argparse
-import math
 import os
 from pathlib import Path
 
@@ -39,9 +38,19 @@ CONFIG = {
 
 
 def get_project_root() -> Path:
-    """Return repository root (script is in extension/)."""
-    scripts_dir = Path(__file__).resolve().parent
-    return scripts_dir.parent
+    """
+    Robustly find project root even if this script is moved into subfolders like:
+      <root>/extension/tfidf_cosine/E5_tfidf_cosine.py
+
+    Strategy: walk up parents until we find expected root markers.
+    """
+    here = Path(__file__).resolve()
+    for p in [here] + list(here.parents):
+        if (p / "data_clean").exists() and (p / "outputs").exists():
+            return p
+    raise RuntimeError(
+        "Could not locate project root. Expected to find 'data_clean/' and 'outputs/' in a parent directory."
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -122,14 +131,16 @@ def build_output(df: pd.DataFrame, sim: np.ndarray) -> pd.DataFrame:
     eps = float(CONFIG["EPS"])
     log_sim = np.where(np.isnan(sim), np.nan, np.log(sim + eps))
 
-    return pd.DataFrame({
-        "date": df["date"],
-        "url": df["url"] if "url" in df.columns else "",
-        "sim_tfidf": sim,
-        "log_sim_tfidf": log_sim,
-        "text_col": CONFIG["TEXT_COL"],
-        "ngram_range": str(CONFIG["NGRAM_RANGE"]),
-    })
+    return pd.DataFrame(
+        {
+            "date": df["date"],
+            "url": df["url"] if "url" in df.columns else "",
+            "sim_tfidf": sim,
+            "log_sim_tfidf": log_sim,
+            "text_col": CONFIG["TEXT_COL"],
+            "ngram_range": str(CONFIG["NGRAM_RANGE"]),
+        }
+    )
 
 
 def save_csv(out: pd.DataFrame, out_path: Path) -> None:

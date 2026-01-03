@@ -30,13 +30,41 @@ CFG = {
 
 T3_ORDER = ["Intercept", "Time", "Time (count)", "Output gap", "Inflation", "Delta MRO", "Adjusted R2"]
 T4_LOG_ORDER = [
-    "Intercept", "Pessimism", "Similarity (log)", "Pessimism × similarity",
-    "Output gap", "Inflation", "Delta MRO", "Adjusted R²",
+    "Intercept",
+    "Pessimism",
+    "Similarity (log)",
+    "Pessimism × similarity",
+    "Output gap",
+    "Inflation",
+    "Delta MRO",
+    "Adjusted R²",
 ]
 T4_Z_ORDER = [
-    "Intercept", "Pessimism", "Similarity (z)", "Pessimism × similarity",
-    "Output gap", "Inflation", "Delta MRO", "Adjusted R²",
+    "Intercept",
+    "Pessimism",
+    "Similarity (z)",
+    "Pessimism × similarity",
+    "Output gap",
+    "Inflation",
+    "Delta MRO",
+    "Adjusted R²",
 ]
+
+
+def get_project_root() -> Path:
+    """
+    Robustly find project root even if this script is moved into subfolders like:
+      <root>/extension/tfidf_cosine/E9_regression_tfidf.py
+
+    Strategy: walk up parents until we find expected root markers.
+    """
+    here = Path(__file__).resolve()
+    for p in [here] + list(here.parents):
+        if (p / "data_clean").exists() and (p / "outputs").exists():
+            return p
+    raise RuntimeError(
+        "Could not locate project root. Expected to find 'data_clean/' and 'outputs/' in a parent directory."
+    )
 
 
 def window() -> tuple[pd.Timestamp, pd.Timestamp, str, str]:
@@ -77,7 +105,7 @@ def save_table(df: pd.DataFrame, path: Path, order: list[str]) -> None:
 
 def base_paths() -> tuple[Path, Path]:
     """Resolve project root and ensure outputs/tables exists."""
-    project_root = Path(__file__).resolve().parent.parent  # script in extension/
+    project_root = get_project_root()
     out = project_root / CFG["OUT_DIR"]
     out.mkdir(parents=True, exist_ok=True)
     return project_root, out
@@ -199,6 +227,7 @@ def run_table4(
         .merge(sim, on="date", how="left")
     )
 
+    # ---- LOG(sim) version (requires sim>0 for log) ----
     dfl = df.query("sim_tfidf > 0").copy()
     if len(dfl) == 0:
         raise ValueError(f"[Table4 log] No observations with sim_tfidf > 0 in {s}..{e}")
@@ -236,11 +265,15 @@ def run_table4(
     print(f"[Table4 TF-IDF log] Window: {s}->{e} | n={len(df)} | n(sim>0)={len(dfl)}")
     print(table_log.reindex(T4_LOG_ORDER).to_string())
 
+    # ---- Z(sim) version (requires variation in sim) ----
     dfz = df.dropna(subset=["sim_tfidf"]).copy()
-    ssim = dfz["sim_tfidf"].astype(float)
+    ssim = pd.to_numeric(dfz["sim_tfidf"], errors="coerce")
+    dfz = dfz.loc[ssim.notna()].copy()
+    ssim = ssim.loc[ssim.notna()].astype(float)
+
     sd = ssim.std(ddof=1)
     if len(dfz) == 0 or not sd or np.isnan(sd) or sd <= 0:
-        print("[Table4 TF-IDF z] skipped (no variation in sim_tfidf)")
+        print("[Table4 TF-IDF z] skipped (no usable variation in sim_tfidf)")
         return
 
     dfz["z_sim_tfidf"] = (ssim - ssim.mean()) / sd

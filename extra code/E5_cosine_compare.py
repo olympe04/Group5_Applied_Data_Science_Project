@@ -1,11 +1,11 @@
 # 6_cosine_compare.py (concise)
-# Compare consecutive cosine similarity from Count vs TF-IDF.
+# Compare consecutive tfidf_cosine similarity from Count vs TF-IDF.
 # I/O:
 #   Inputs : data_clean/ecb_statements_preprocessed.csv
 #   Outputs: data_clean/ecb_similarity_cosines.csv,
 #            outputs/plots/cosine_series.png, outputs/plots/cosine_scatter.png
 # Notes:
-#   The script builds Count and TF-IDF n-gram matrices on the same corpus, computes consecutive cosine similarity,
+#   The script builds Count and TF-IDF n-gram matrices on the same corpus, computes consecutive tfidf_cosine similarity,
 #   saves the series to CSV, and exports two diagnostic plots.
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ def make_vectorizers() -> dict:
 
 
 def consecutive_cosine(X) -> np.ndarray:
-    """Compute consecutive cosine similarity sim[t] = cos(X[t], X[t-1]) with NaN at t=0."""
+    """Compute consecutive tfidf_cosine similarity sim[t] = cos(X[t], X[t-1]) with NaN at t=0."""
     n = X.shape[0]
     sim = np.full(n, np.nan, dtype=float)
     for t in range(1, n):
@@ -114,18 +114,18 @@ def build_output(df: pd.DataFrame, sim_count: np.ndarray, sim_tfidf: np.ndarray)
 
 
 def save_csv(out: pd.DataFrame, out_path: Path) -> None:
-    """Write cosine outputs to CSV."""
+    """Write tfidf_cosine outputs to CSV."""
     out.to_csv(out_path, index=False, encoding="utf-8")
 
 
 def save_plots(df: pd.DataFrame, out: pd.DataFrame, plots_dir: Path) -> tuple[Path, Path]:
-    """Save time-series and scatter plots for cosine similarities."""
+    """Save time-series and scatter plots for tfidf_cosine similarities."""
     fig_series = plots_dir / "cosine_series.png"
     plt.figure()
     plt.plot(df["date_dt"], out["sim_countcos"], label="Cosine (Counts)")
     plt.plot(df["date_dt"], out["sim_tfidfcos"], label="Cosine (TF-IDF)")
     plt.legend()
-    plt.title("Consecutive cosine similarity over time")
+    plt.title("Consecutive tfidf_cosine similarity over time")
     plt.xlabel("Date")
     plt.ylabel("Similarity")
     plt.tight_layout()
@@ -136,7 +136,7 @@ def save_plots(df: pd.DataFrame, out: pd.DataFrame, plots_dir: Path) -> tuple[Pa
     fig_scatter = plots_dir / "cosine_scatter.png"
     plt.figure()
     plt.scatter(valid["sim_countcos"], valid["sim_tfidfcos"], s=10)
-    plt.title("TF-IDF cosine vs Count cosine (consecutive)")
+    plt.title("TF-IDF tfidf_cosine vs Count tfidf_cosine (consecutive)")
     plt.xlabel("Cosine (Counts)")
     plt.ylabel("Cosine (TF-IDF)")
     plt.tight_layout()
@@ -147,7 +147,7 @@ def save_plots(df: pd.DataFrame, out: pd.DataFrame, plots_dir: Path) -> tuple[Pa
 
 
 def main() -> None:
-    """Execute the cosine comparison pipeline and export CSV + plots."""
+    """Execute the tfidf_cosine comparison pipeline and export CSV + plots."""
     project_root = get_project_root()
     in_path, out_path, plots_dir = resolve_paths(project_root)
 

@@ -25,8 +25,19 @@ CONFIG = {
 
 
 def get_project_root() -> Path:
-    """Return repository root (script is in extension/)."""
-    return Path(__file__).resolve().parent.parent
+    """
+    Robustly find project root even if this script is moved into subfolders like:
+      <root>/extension/<something>/E8_merge_car_pessimism_similarity.py
+
+    Strategy: walk up parents until we find expected root markers.
+    """
+    here = Path(__file__).resolve()
+    for p in [here] + list(here.parents):
+        if (p / "data_clean").exists() and (p / "outputs").exists():
+            return p
+    raise RuntimeError(
+        "Could not locate project root. Expected to find 'data_clean/' and 'outputs/' in a parent directory."
+    )
 
 
 def read_csv_checked(path: Path) -> pd.DataFrame:
@@ -108,7 +119,8 @@ def main() -> None:
     merged = add_zscore(merged, "sim_tfidf")
 
     print(f"Rows: {len(merged)}")
-    print(f"Missing sim_tfidf: {int(merged['sim_tfidf'].isna().sum())}")
+    if "sim_tfidf" in merged.columns:
+        print(f"Missing sim_tfidf: {int(pd.to_numeric(merged['sim_tfidf'], errors='coerce').isna().sum())}")
 
     merged.to_csv(p_out, index=False, encoding="utf-8")
     print(f"Saved: {p_out}")
