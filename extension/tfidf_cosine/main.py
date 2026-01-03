@@ -27,7 +27,7 @@ from pathlib import Path
 
 CONFIG = {
     "START_DATE": "1999-01-01",
-    "END_DATE": "2025-12-31",
+    "END_DATE": "2013-12-31",
     # Which steps to run:
     "RUN_SIMILARITY": True,      # E5_tfidf_cosine.py
     "RUN_MERGE_DATASET": False,  # ../E8_merge_car_pessimism_similarity.py (optional)
