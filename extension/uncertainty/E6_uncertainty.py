@@ -24,8 +24,8 @@ import pandas as pd
 CONFIG = {
     "INPUT_CSV": "data_clean/ecb_statements_preprocessed.csv",
     "LM_DICTIONARY_CSV": "data_raw/Loughran-McDonald_MasterDictionary_1993-2024.csv",
-    "OUTPUT_UNC_CSV": "data_features/ecb_uncertainty_lm.csv",                # <- changed
-    "OUTPUT_MERGED_CSV": "data_features/ecb_statements_with_uncertainty.csv", # <- changed
+    "OUTPUT_UNC_CSV": "data_features/ecb_uncertainty_lm.csv",
+    "OUTPUT_MERGED_CSV": "data_features/ecb_statements_with_uncertainty.csv",
     "OUTPUT_DIR": "outputs/plots",
     "DEFAULT_START_DATE": "1999-01-01",
     "DEFAULT_END_DATE": "2013-12-31",

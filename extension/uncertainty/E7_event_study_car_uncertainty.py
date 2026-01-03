@@ -34,8 +34,8 @@ def get_project_root() -> Path:
 
 def resolve_paths(project_root: Path) -> tuple[Path, Path, Path]:
     raw = project_root / "data_raw"
-    clean = project_root / "data_clean"            # input events still here
-    features = project_root / "data_features"      # outputs go here
+    clean = project_root / "data_clean"
+    features = project_root / "data_features"
     features.mkdir(parents=True, exist_ok=True)
     return raw / "^SX5E data.xlsx", clean / "ecb_uncertainty_lm.csv", features
 

@@ -21,7 +21,7 @@ from typing import Dict, List, Set, Tuple
 # - DRY_RUN prints commands instead of executing them.
 CONFIG = {
     "START_DATE": "1999-01-01",
-    "END_DATE": "2025-12-31",
+    "END_DATE": "2013-12-31",
     "RUN_SCRAPING": False,
     "REQUIRE_RAW_IF_NO_SCRAPE": True,
     "DRY_RUN": False,

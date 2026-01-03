@@ -2,7 +2,7 @@
 E9_regression_uncertainty.py
 
 Compute Table 4-style OLS regressions for absCAR AND Table 2-style summary statistics in a single script,
-for the **uncertainty** indicator (LM).
+for the uncertainty indicator (LM).
 
 Table 4 (regressions):
   Outcome: absCAR_pct
@@ -149,7 +149,13 @@ def build_df(
 
 
 def table4(df: pd.DataFrame, ind_col: str, ind_label: str) -> tuple[pd.DataFrame, int]:
-    """Run Table 4 specs and return (formatted table, n(sim>0))."""
+    """
+    Run Table 4 specs and return (formatted table, n(sim>0)).
+
+    CHANGE:
+      - Remove the main effect of similarity (log)
+      - Keep only interaction: indicator × log(similarity)
+    """
     controls = ["output_gap", "inflation", "delta_mro_eom"]
     y = "absCAR_pct"
 
@@ -174,9 +180,10 @@ def table4(df: pd.DataFrame, ind_col: str, ind_label: str) -> tuple[pd.DataFrame
     if len(dfi) == 0:
         raise ValueError("No observations with sim_jaccard > 0; cannot run interaction specs (3)-(4).")
 
-    # spec (3) includes indicator + log(sim) + interaction
-    r3 = ols_hc1(dfi, y, [ind_col, "log_similarity", "ind_x_sim"])
-    r4 = ols_hc1(dfi, y, [ind_col, "log_similarity", "ind_x_sim"] + controls)
+    # (3) indicator + interaction ONLY (no log(sim) main effect)
+    r3 = ols_hc1(dfi, y, [ind_col, "ind_x_sim"])
+    # (4) indicator + interaction + controls
+    r4 = ols_hc1(dfi, y, [ind_col, "ind_x_sim"] + controls)
 
     inter_label = f"{ind_label} × similarity"
 
@@ -184,7 +191,6 @@ def table4(df: pd.DataFrame, ind_col: str, ind_label: str) -> tuple[pd.DataFrame
         return {
             "Intercept": fmt(m, "const"),
             ind_label: fmt(m, ind_col),
-            "Similarity (log)": fmt(m, "log_similarity"),
             inter_label: fmt(m, "ind_x_sim"),
             "Output gap": fmt(m, "output_gap"),
             "Inflation": fmt(m, "inflation"),
@@ -195,13 +201,13 @@ def table4(df: pd.DataFrame, ind_col: str, ind_label: str) -> tuple[pd.DataFrame
     order = [
         "Intercept",
         ind_label,
-        "Similarity (log)",
         inter_label,
         "Output gap",
         "Inflation",
         "Delta MRO",
         "Adjusted R²",
     ]
+
     out = pd.DataFrame({"(1)": col(r1), "(2)": col(r2), "(3)": col(r3), "(4)": col(r4)}).loc[order]
     return out, len(dfi)
 

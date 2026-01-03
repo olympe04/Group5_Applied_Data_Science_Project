@@ -10,7 +10,6 @@
 #           outputs/plots/ts_sim_centroid_k_jaccard.png
 #
 # Notes:
-# - This script is intended to live in: extension/learning_speed/
 # - Uses ECB_START_DATE / ECB_END_DATE if set, otherwise DATE_MIN / DATE_MAX.
 
 from __future__ import annotations
@@ -30,8 +29,7 @@ CONFIG = {
     "INPUT_CSV": "data_clean/ecb_statements_preprocessed.csv",
     "OUTPUT_CSV": "data_features/ecb_similarity_jaccard_learning.csv",
 
-    # Use stems to match the paper’s Jaccard bigrams step most closely (typically).
-    # If your Jaccard step used tokens_clean_str instead, switch it here.
+    # We use stems to match the paper’s Jaccard bigrams step most closely.
     "TEXT_COL": "stems_str",  # "stems_str" or "tokens_clean_str"
 
     "DATE_MIN": "1999-01-01",

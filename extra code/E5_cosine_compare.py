@@ -2,7 +2,7 @@
 # Compare consecutive tfidf_cosine similarity from Count vs TF-IDF.
 # I/O:
 #   Inputs : data_clean/ecb_statements_preprocessed.csv
-#   Outputs: data_clean/ecb_similarity_cosines.csv,
+#   Outputs: data_features/ecb_similarity_cosines.csv,
 #            outputs/plots/cosine_series.png, outputs/plots/cosine_scatter.png
 # Notes:
 #   The script builds Count and TF-IDF n-gram matrices on the same corpus, computes consecutive tfidf_cosine similarity,
@@ -22,7 +22,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 CONFIG = {
     "INPUT_CSV": "data_clean/ecb_statements_preprocessed.csv",
-    "OUTPUT_CSV": "data_clean/ecb_similarity_cosines.csv",  # changed (was data_features/)
+    "OUTPUT_CSV": "data_features/ecb_similarity_cosines.csv",
     "TEXT_COL": "stems_str",          # "stems_str" or "tokens_clean_str"
     "NGRAM_RANGE": (1, 2),
     "MIN_DF": 1,

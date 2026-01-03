@@ -27,8 +27,8 @@ import pandas as pd
 CONFIG = {
     "INPUT_CSV": "data_clean/ecb_statements_preprocessed.csv",
     "LM_DICTIONARY_CSV": "data_raw/Loughran-McDonald_MasterDictionary_1993-2024.csv",
-    "OUTPUT_PESSIMISM_CSV": "data_features/ecb_pessimism_lm.csv",                 # <- changed
-    "OUTPUT_MERGED_CSV": "data_features/ecb_statements_with_pessimism.csv",       # <- changed
+    "OUTPUT_PESSIMISM_CSV": "data_features/ecb_pessimism_lm.csv",
+    "OUTPUT_MERGED_CSV": "data_features/ecb_statements_with_pessimism.csv",
     "OUTPUT_DIR": "outputs/plots",
     "DEFAULT_START_DATE": "1999-01-01",
     "DEFAULT_END_DATE": "2013-12-31",
@@ -161,7 +161,7 @@ def compute_pessimism(df: pd.DataFrame, neg_set: set[str], pos_set: set[str], te
     d["lm_total"] = res.apply(lambda x: x[2])
     d["pessimism_lm"] = res.apply(lambda x: x[3])
 
-    # ---- Extension: asymmetry split (bad vs good news) ----
+    # asymmetry split (bad vs good news)
     d["pess_neg_lm"] = d["pessimism_lm"].clip(lower=0)  # bad news component: >=0
     d["pess_pos_lm"] = d["pessimism_lm"].clip(upper=0)  # good news component: <=0
 

@@ -56,7 +56,7 @@ def resolve_paths(project_root: Path) -> tuple[Path, Path, Path, Path]:
     out_tables.mkdir(parents=True, exist_ok=True)
     return (
         dc / "ecb_similarity_jaccard_bigrams.csv",
-        dc / "ecb_pessimism_with_car.csv",   # <- back to data_clean (file is here)
+        dc / "ecb_pessimism_with_car.csv",
         dc / "controls_month_end.csv",
         out_tables,
     )

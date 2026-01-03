@@ -3,9 +3,6 @@
 #   - 1-lag similarity comes from data_clean/ecb_similarity_jaccard_bigrams.csv (sim_jaccard)
 #   - centroid-k similarity comes from data_features/ecb_similarity_jaccard_learning.csv (sim_centroid_k)
 #
-# IMPORTANT: Specs (3)-(4) are INTERACTION-ONLY (paper-style), i.e. only the interaction term enters the model.
-# Exports ONLY regression tables.
-#
 # I/O:
 #   Inputs :
 #     - data_features/ecb_similarity_jaccard_learning.csv
@@ -30,7 +27,7 @@ CFG = {
     "START_DEFAULT": "1999-01-01",
     "END_DEFAULT": "2013-12-31",
 
-    # centroid-k learning-speed file (from your Jaccard learning-speed step)
+    # centroid-k learning-speed file
     "LEARNING_FILE": "data_features/ecb_similarity_jaccard_learning.csv",
 
     # base 1-lag Jaccard series (from replication step 5)
@@ -220,7 +217,7 @@ def run_table4_centroidk_interaction_only(
     print(f"[Table4 centroid-k Jaccard log | interaction-only] Window: {s}->{e} | n={len(df)} | n(sim>0)={len(dfl)}")
     print(table_log.reindex(T4_LOG_ORDER).to_string())
 
-    # -------- Z(sim_centroid_k) + interaction-only --------
+    # Z(sim_centroid_k) + interaction-only
     dfz = df.dropna(subset=["sim_centroid_k"]).copy()
     ssim = dfz["sim_centroid_k"].astype(float)
     sd = ssim.std(ddof=1)

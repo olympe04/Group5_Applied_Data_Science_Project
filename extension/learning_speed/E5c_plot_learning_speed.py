@@ -8,10 +8,6 @@
 #   Output: outputs/plots/ts_sim_centroid_k_jaccard.png
 #           outputs/plots/ts_novelty_centroid_k_jaccard.png
 #           outputs/plots/ts_compare_1lag_vs_centroidk_jaccard.png
-#
-# Notes:
-# - This script is intended to live in: extension/learning_speed/
-# - get_project_root() is robust: it finds the repo root by walking up parents.
 
 from __future__ import annotations
 
@@ -74,7 +70,7 @@ def main() -> None:
     if not p_base.exists():
         raise FileNotFoundError(f"Missing: {p_base} (run base similarity step 5 first)")
 
-    # --- learning-speed dataset (centroid-k + novelty) ---
+    # learning-speed dataset (centroid-k + novelty)
     df = pd.read_csv(p_learn)
     if "date" not in df.columns:
         raise ValueError(f"Missing 'date' in {p_learn}")
@@ -106,7 +102,7 @@ def main() -> None:
     k = int(df["k_memory"].dropna().iloc[0]) if "k_memory" in df.columns and df["k_memory"].notna().any() else None
     title_k = f"(k={k})" if k is not None else ""
 
-    # --- Plot 1: centroid-k similarity ---
+    # Plot 1: centroid-k similarity
     fig = plt.figure(figsize=(11, 4.5))
     plt.plot(df["date_dt"], pd.to_numeric(df["sim_centroid_k"], errors="coerce"))
     plt.title(f"Jaccard centroid similarity {title_k}")
@@ -117,7 +113,7 @@ def main() -> None:
     fig.savefig(f1, dpi=int(CFG["DPI"]))
     plt.close(fig)
 
-    # --- Plot 2: novelty = 1 - centroid similarity ---
+    # Plot 2: novelty = 1 - centroid similarity
     fig = plt.figure(figsize=(11, 4.5))
     plt.plot(df["date_dt"], pd.to_numeric(df["novelty_centroid_k"], errors="coerce"))
     plt.title(f"Novelty (1 - centroid similarity) {title_k}")
@@ -128,7 +124,7 @@ def main() -> None:
     fig.savefig(f2, dpi=int(CFG["DPI"]))
     plt.close(fig)
 
-    # --- Plot 3: compare 1-lag (base Jaccard) vs centroid-k ---
+    # Plot 3: compare 1-lag (base Jaccard) vs centroid-k
     fig = plt.figure(figsize=(11, 4.5))
     plt.plot(df["date_dt"], pd.to_numeric(df["sim_jaccard"], errors="coerce"))
     plt.plot(df["date_dt"], pd.to_numeric(df["sim_centroid_k"], errors="coerce"))
