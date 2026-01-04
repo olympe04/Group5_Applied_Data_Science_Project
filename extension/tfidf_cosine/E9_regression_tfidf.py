@@ -25,7 +25,7 @@ import statsmodels.api as sm
 
 CFG = {
     "START_DEFAULT": "1999-01-01",
-    "END_DEFAULT": "2025-12-31",
+    "END_DEFAULT": "2013-12-31",
     "SIM_FILE": "data_features/ecb_similarity_tfidf.csv",
     "CAR_FILE": "data_clean/ecb_pessimism_with_car.csv",
     "CTL_FILE": "data_clean/controls_month_end.csv",

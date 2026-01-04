@@ -1,17 +1,22 @@
 # E6_sentiment_pessimism_lm.py
-# Extension of step 6: Compute ECB pessimism using Loughran–McDonald dictionary
-# + split pessimism into bad news vs good news components (asymmetry / non-linearity).
+# Compute LM pessimism from ECB statements + split into bad vs good news components.
 #
 # Pessimism = (Negative - Positive) / TotalWords.
 # Bad news component  (pess_neg) = max(Pessimism, 0)
 # Good news component (pess_pos) = min(Pessimism, 0)
 #
-# I/O:
-#   Inputs: data_clean/ecb_statements_preprocessed.csv (requires tokens_clean_str)
-#           data_raw/Loughran-McDonald_MasterDictionary_1993-2024.csv
-#   Outputs: data_features/ecb_pessimism_lm.csv
-#            data_features/ecb_statements_with_pessimism.csv
-#            (optional) outputs/plots/pessimism_lm_<START>_<END>.png
+# IMPORTANT OUTPUT FIX:
+#   - writes event-level dataset to data_clean/ so downstream event-study + regressions can use it:
+#       data_clean/ecb_sentiment_lm.csv
+#   - also writes a copy to data_features/ for convenience:
+#       data_features/ecb_pessimism_lm.csv
+#
+# Inputs:
+#   data_clean/ecb_statements_preprocessed.csv (needs tokens_clean_str)
+#   data_raw/Loughran-McDonald_MasterDictionary_1993-2024.csv
+#
+# Optional plot:
+#   outputs/plots/pessimism_lm_<START>_<END>.png  (window = env ECB_START_DATE/ECB_END_DATE)
 
 from __future__ import annotations
 
@@ -19,7 +24,6 @@ import os
 from collections import Counter
 from pathlib import Path
 
-import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -27,8 +31,16 @@ import pandas as pd
 CONFIG = {
     "INPUT_CSV": "data_clean/ecb_statements_preprocessed.csv",
     "LM_DICTIONARY_CSV": "data_raw/Loughran-McDonald_MasterDictionary_1993-2024.csv",
-    "OUTPUT_PESSIMISM_CSV": "data_features/ecb_pessimism_lm.csv",
+
+    # Downstream expects this in data_clean/ so step 7 + asymmetry regressions work.
+    "OUTPUT_EVENT_CSV_CLEAN": "data_clean/ecb_sentiment_lm.csv",
+
+    # Optional extra copy for extensions/diagnostics
+    "OUTPUT_EVENT_CSV_FEATURES": "data_features/ecb_pessimism_lm.csv",
+
+    # Full merged statements (optional but useful)
     "OUTPUT_MERGED_CSV": "data_features/ecb_statements_with_pessimism.csv",
+
     "OUTPUT_DIR": "outputs/plots",
     "DEFAULT_START_DATE": "1999-01-01",
     "DEFAULT_END_DATE": "2013-12-31",
@@ -41,22 +53,17 @@ CONFIG = {
 
 def get_project_root() -> Path:
     """
-    Robustly find project root even if this script is moved into subfolders like:
-      <root>/extension/separate_goodnews_badnews/E6_sentiment_pessimism_lm.py
-
-    Strategy: walk up parents until we find expected root markers.
+    Robustly find project root even if script is run from extension/... subfolders.
+    Root is identified by containing BOTH data_raw/ and data_clean/.
     """
     here = Path(__file__).resolve()
     for p in [here] + list(here.parents):
-        if (p / "data_clean").exists() and (p / "outputs").exists():
+        if (p / "data_raw").exists() and (p / "data_clean").exists():
             return p
-    raise RuntimeError(
-        "Could not locate project root. Expected to find 'data_clean/' and 'outputs/' in a parent directory."
-    )
+    raise RuntimeError("Could not locate project root (expected data_raw/ and data_clean/ in a parent folder).")
 
 
 def get_window_from_env() -> tuple[pd.Timestamp, pd.Timestamp, str, str]:
-    """Return (start_dt, end_dt, start_str, end_str) from env (or defaults)."""
     start_str = os.getenv("ECB_START_DATE", CONFIG["DEFAULT_START_DATE"])
     end_str = os.getenv("ECB_END_DATE", CONFIG["DEFAULT_END_DATE"])
     start_dt = pd.Timestamp(start_str)
@@ -67,18 +74,17 @@ def get_window_from_env() -> tuple[pd.Timestamp, pd.Timestamp, str, str]:
 
 
 def resolve_paths(project_root: Path) -> dict[str, Path]:
-    """Build all input/output paths used by the script."""
     return {
         "in_csv": project_root / CONFIG["INPUT_CSV"],
         "lm_csv": project_root / CONFIG["LM_DICTIONARY_CSV"],
-        "out_pess": project_root / CONFIG["OUTPUT_PESSIMISM_CSV"],
+        "out_clean": project_root / CONFIG["OUTPUT_EVENT_CSV_CLEAN"],
+        "out_features": project_root / CONFIG["OUTPUT_EVENT_CSV_FEATURES"],
         "out_merged": project_root / CONFIG["OUTPUT_MERGED_CSV"],
         "out_plots": project_root / CONFIG["OUTPUT_DIR"],
     }
 
 
 def validate_inputs(paths: dict[str, Path]) -> None:
-    """Check required input files exist before processing."""
     if not paths["in_csv"].exists():
         raise FileNotFoundError(
             f"Missing input: {paths['in_csv']}\n"
@@ -89,7 +95,6 @@ def validate_inputs(paths: dict[str, Path]) -> None:
 
 
 def load_preprocessed(in_path: Path) -> pd.DataFrame:
-    """Load preprocessed statements and validate required columns."""
     df = pd.read_csv(in_path)
     if "date" not in df.columns:
         raise ValueError("Missing 'date' column in ecb_statements_preprocessed.csv")
@@ -102,7 +107,6 @@ def load_preprocessed(in_path: Path) -> pd.DataFrame:
 
 
 def preprocess_statements(df: pd.DataFrame, text_col: str = "tokens_clean_str") -> pd.DataFrame:
-    """Parse dates, drop invalid rows, and deduplicate by date (keep longest text)."""
     d = df.copy()
     d["date"] = pd.to_datetime(d["date"], errors="coerce")
     d = d[d["date"].notna()].copy()
@@ -121,9 +125,7 @@ def preprocess_statements(df: pd.DataFrame, text_col: str = "tokens_clean_str") 
 
 
 def load_lm_sets(lm_path: Path) -> tuple[set[str], set[str]]:
-    """Load LM dictionary and return lowercase sets of negative and positive words."""
     lm = pd.read_csv(lm_path)
-
     if "Word" not in lm.columns:
         raise ValueError(f"LM dictionary missing 'Word' column: {lm_path}")
     if "Negative" not in lm.columns or "Positive" not in lm.columns:
@@ -136,7 +138,6 @@ def load_lm_sets(lm_path: Path) -> tuple[set[str], set[str]]:
 
 
 def count_sentiment(tokens_str: str, neg_set: set[str], pos_set: set[str]) -> tuple[int, int, int, float | None]:
-    """Return (neg, pos, total, pessimism) for one token string."""
     if not isinstance(tokens_str, str) or tokens_str.strip() == "":
         return 0, 0, 0, None
 
@@ -152,7 +153,6 @@ def count_sentiment(tokens_str: str, neg_set: set[str], pos_set: set[str]) -> tu
 
 
 def compute_pessimism(df: pd.DataFrame, neg_set: set[str], pos_set: set[str], text_col: str) -> pd.DataFrame:
-    """Add LM counts and pessimism columns (+ asymmetry split) to the dataframe."""
     d = df.copy()
     res = d[text_col].apply(lambda s: count_sentiment(s, neg_set, pos_set))
 
@@ -161,9 +161,9 @@ def compute_pessimism(df: pd.DataFrame, neg_set: set[str], pos_set: set[str], te
     d["lm_total"] = res.apply(lambda x: x[2])
     d["pessimism_lm"] = res.apply(lambda x: x[3])
 
-    # asymmetry split (bad vs good news)
-    d["pess_neg_lm"] = d["pessimism_lm"].clip(lower=0)  # bad news component: >=0
-    d["pess_pos_lm"] = d["pessimism_lm"].clip(upper=0)  # good news component: <=0
+    # asymmetry split
+    d["pess_neg_lm"] = d["pessimism_lm"].clip(lower=0)  # >=0
+    d["pess_pos_lm"] = d["pessimism_lm"].clip(upper=0)  # <=0
 
     if CONFIG["ADD_PCT_VERSION"]:
         d["pessimism_lm_pct"] = d["pessimism_lm"] * 100.0
@@ -173,8 +173,7 @@ def compute_pessimism(df: pd.DataFrame, neg_set: set[str], pos_set: set[str], te
     return d
 
 
-def save_outputs(df_all: pd.DataFrame, out_pess: Path, out_merged: Path) -> None:
-    """Write the full-sample pessimism file and the merged statements file."""
+def save_outputs(df_all: pd.DataFrame, out_clean: Path, out_features: Path, out_merged: Path) -> None:
     keep_meta = [c for c in ["date", "url", "title", "subtitle", "method"] if c in df_all.columns]
 
     out_cols = keep_meta + [
@@ -188,21 +187,27 @@ def save_outputs(df_all: pd.DataFrame, out_pess: Path, out_merged: Path) -> None
     if CONFIG["ADD_PCT_VERSION"]:
         out_cols += ["pessimism_lm_pct", "pess_neg_lm_pct", "pess_pos_lm_pct"]
 
-    out_pess.parent.mkdir(parents=True, exist_ok=True)
-    out_df = df_all[out_cols].copy()
-    out_df["date"] = pd.to_datetime(out_df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
-    out_df.to_csv(out_pess, index=False, encoding="utf-8")
-    print(f"Saved FULL sample: {out_pess}")
+    # Event-level file in data_clean/ (for step 7 + asymmetry)
+    out_clean.parent.mkdir(parents=True, exist_ok=True)
+    clean_df = df_all[out_cols].copy()
+    clean_df["date"] = pd.to_datetime(clean_df["date"], errors="coerce").dt.strftime("%Y-%m-%d")
+    clean_df.to_csv(out_clean, index=False, encoding="utf-8")
+    print(f"Saved (for downstream): {out_clean}")
 
+    # Optional copy to data_features/
+    out_features.parent.mkdir(parents=True, exist_ok=True)
+    clean_df.to_csv(out_features, index=False, encoding="utf-8")
+    print(f"Saved (copy): {out_features}")
+
+    # Full merged statements (optional)
     out_merged.parent.mkdir(parents=True, exist_ok=True)
     merged = df_all.copy()
     merged["date"] = pd.to_datetime(merged["date"], errors="coerce").dt.strftime("%Y-%m-%d")
     merged.to_csv(out_merged, index=False, encoding="utf-8")
-    print(f"Saved merged FULL sample: {out_merged}")
+    print(f"Saved merged: {out_merged}")
 
 
 def plot_window(df_all: pd.DataFrame, out_dir: Path) -> None:
-    """Plot pessimism over the env window and save PNG to outputs/plots."""
     start_dt, end_dt, start_str, end_str = get_window_from_env()
 
     w = df_all[
@@ -210,17 +215,15 @@ def plot_window(df_all: pd.DataFrame, out_dir: Path) -> None:
         & (df_all["date"] <= end_dt)
         & (df_all["pessimism_lm"].notna())
     ].copy()
-
     if len(w) == 0:
         raise ValueError(f"No valid pessimism values to plot in window {start_str}–{end_str}.")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     w = w.sort_values("date")
-    print(f"Plot observations: {len(w)}")
 
     plt.figure()
     plt.plot(w["date"], w["pessimism_lm"], linewidth=1)
-    plt.title(f"ECB pessimism (Loughran–McDonald), {start_str}–{end_str}")
+    plt.title(f"ECB pessimism (LM), {start_str}–{end_str}")
     plt.xlabel("Date")
     plt.ylabel("Pessimism")
     plt.tight_layout()
@@ -231,26 +234,26 @@ def plot_window(df_all: pd.DataFrame, out_dir: Path) -> None:
         plt.show()
     else:
         plt.close()
-    print(f"Saved plot (window-only): {fig_path}")
+    print(f"Saved plot: {fig_path}")
 
 
 def main() -> None:
-    """Execute the full pessimism pipeline (with asymmetry split)."""
     project_root = get_project_root()
     paths = resolve_paths(project_root)
     validate_inputs(paths)
 
+    print(f"Project root: {project_root}")
     print(f"Using input: {paths['in_csv']}")
     print(f"Using LM dict: {paths['lm_csv'].name}")
 
     df_raw = load_preprocessed(paths["in_csv"])
     df_all = preprocess_statements(df_raw, text_col="tokens_clean_str")
-    print(f"Rows in FULL sample (post-dedupe): {len(df_all)}")
+    print(f"Rows (post-dedupe): {len(df_all)}")
 
     neg_set, pos_set = load_lm_sets(paths["lm_csv"])
     df_all = compute_pessimism(df_all, neg_set, pos_set, text_col="tokens_clean_str")
 
-    save_outputs(df_all, paths["out_pess"], paths["out_merged"])
+    save_outputs(df_all, paths["out_clean"], paths["out_features"], paths["out_merged"])
 
     if CONFIG["PLOT"]:
         plot_window(df_all, paths["out_plots"])
