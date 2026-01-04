@@ -47,7 +47,7 @@ PIPELINE: List[Step] = [
     Step("similarity", "5_similarity_jaccard_bigrams.py", deps=("preprocess",)),
     Step("pessimism", "6_sentiment_pessimism_lm.py", deps=("preprocess",)),
     Step("controls", "7b_prepare_controls_month_end.py"),
-    Step("event_study", "E7_event_study_car.py", deps=("pessimism",)),
+    Step("event_study", "7_event_study_car.py", deps=("pessimism",)),
     Step("reg_table3", "8_regressions-table3.py", deps=("similarity", "controls")),
     Step("reg_table4", "8_regressions-table4.py", deps=("event_study", "similarity", "controls")),
     Step("summary_table2", "9_summary_table2.py", deps=("event_study", "similarity", "controls")),
