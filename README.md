@@ -90,7 +90,7 @@ project_root/
 │  ├─ 4_pre-process.py
 │  ├─ 05_similarity_jaccard_bigrams.py
 │  ├─ 6_sentiment_pessimism_lm.py
-│  ├─ 7_event_study_car.py
+│  ├─ E7_event_study_car.py
 │  ├─ 7b_prepare_controls_month_end.py
 │  ├─ 8_regressions-table3.py
 │  ├─ 8_regressions-table4.py
