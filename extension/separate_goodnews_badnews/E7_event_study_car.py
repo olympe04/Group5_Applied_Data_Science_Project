@@ -1,4 +1,4 @@
-# 7_event_study_car.py
+# E7_event_study_car.py
 # Compute CAR around ECB events using a constant-mean return model with fixed estimation and event windows.
 # I/O:
 #   Inputs : data_raw/^SX5E data.xlsx (prices),

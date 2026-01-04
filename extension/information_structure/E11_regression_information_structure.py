@@ -33,7 +33,7 @@ import statsmodels.api as sm
 
 
 DEFAULT_START = "1999-01-01"
-DEFAULT_END = "2025-12-31"
+DEFAULT_END = "2013-12-31"
 
 CFG = {
     "FEATURES": "data_features/ecb_information_structure.csv",

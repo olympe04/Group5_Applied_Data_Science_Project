@@ -28,91 +28,59 @@ from pathlib import Path
 CONFIG = {
     "START_DATE": "1999-01-01",
     "END_DATE": "2013-12-31",
-    # Which steps to run:
+
     "RUN_SIMILARITY": True,      # E5_tfidf_cosine.py
     "RUN_MERGE_DATASET": False,  # ../E8_merge_car_pessimism_similarity.py (optional)
     "RUN_REGRESSIONS": True,     # E9_regression_tfidf.py
-    # Execution mode:
-    "DRY_RUN": False,
 }
 
 STEPS = [
-    ("tfidf_similarity", "E5_tfidf_cosine.py", CONFIG["RUN_SIMILARITY"]),
-    ("merge_analysis_dataset", "../E8_merge_car_pessimism_similarity.py", CONFIG["RUN_MERGE_DATASET"]),
-    ("regressions_tfidf", "E9_regression_tfidf.py", CONFIG["RUN_REGRESSIONS"]),
+    ("RUN_SIMILARITY", "E5_tfidf_cosine.py"),
+    ("RUN_MERGE_DATASET", "../E8_merge_car_pessimism_similarity.py"),
+    ("RUN_REGRESSIONS", "E9_regression_tfidf.py"),
 ]
 
 
 def get_project_root() -> Path:
-    """Find repo root from extension/tfidf_cosine/ by walking up until data_clean/ and outputs/ exist."""
     here = Path(__file__).resolve()
-    for p in [here] + list(here.parents):
+    for p in (here, *here.parents):
         if (p / "data_clean").exists() and (p / "outputs").exists():
             return p
-    raise RuntimeError("Could not locate project root (expected 'data_clean/' and 'outputs/' in a parent dir).")
-
-
-def require_file(root: Path, relpath: str, hint: str) -> None:
-    p = root / relpath
-    if not p.exists():
-        raise FileNotFoundError(f"Missing required input:\n  {p}\n{hint}")
-
-
-def validate_prereqs(root: Path) -> None:
-    if CONFIG["RUN_SIMILARITY"]:
-        require_file(
-            root,
-            "data_clean/ecb_statements_preprocessed.csv",
-            "Run replication preprocess (step 4) to generate ecb_statements_preprocessed.csv.",
-        )
-
-    if CONFIG["RUN_MERGE_DATASET"] or CONFIG["RUN_REGRESSIONS"]:
-        require_file(
-            root,
-            "data_clean/ecb_pessimism_with_car.csv",
-            "Run replication steps 6 + 7 to generate ecb_pessimism_with_car.csv.",
-        )
-
-    if CONFIG["RUN_REGRESSIONS"]:
-        require_file(
-            root,
-            "data_clean/controls_month_end.csv",
-            "Run replication step 7b to generate controls_month_end.csv.",
-        )
-
-
-def run_script(script_path: Path, project_root: Path, env: dict[str, str]) -> None:
-    if not script_path.exists():
-        raise FileNotFoundError(f"Missing script: {script_path}")
-
-    cmd = [sys.executable, str(script_path)]
-    print(f"▶ {script_path.name}")
-
-    if CONFIG["DRY_RUN"]:
-        print("  ", " ".join(cmd))
-        return
-
-    subprocess.run(cmd, check=True, cwd=str(project_root), env={**os.environ, **env})
+    raise RuntimeError("Could not locate project root (expected data_clean/ and outputs/).")
 
 
 def main() -> None:
-    scripts_dir = Path(__file__).resolve().parent  # .../extension/tfidf_cosine
-    project_root = get_project_root()
+    scripts_dir = Path(__file__).resolve().parent
+    root = get_project_root()
 
-    selected = [script for _, script, on in STEPS if on]
+    selected = [name for flag, name in STEPS if CONFIG[flag]]
     if not selected:
         print("No steps selected (all RUN_* are False). Nothing to do.")
         return
 
+    # prereqs expected (no fallbacks)
+    required_inputs = [
+        "data_clean/ecb_statements_preprocessed.csv",
+        "data_clean/ecb_pessimism_with_car.csv",
+        "data_clean/controls_month_end.csv",
+    ]
+    for rel in required_inputs:
+        p = root / rel
+        if not p.exists():
+            raise FileNotFoundError(f"Missing required input: {p}")
+
     env = {
+        **os.environ,
         "ECB_START_DATE": CONFIG["START_DATE"],
         "ECB_END_DATE": CONFIG["END_DATE"],
     }
 
-    validate_prereqs(project_root)
-
-    for script in selected:
-        run_script((scripts_dir / script).resolve(), project_root, env)
+    for name in selected:
+        script = (scripts_dir / name).resolve()
+        if not script.exists():
+            raise FileNotFoundError(f"Missing script: {script}")
+        print(f"▶ {script.name}")
+        subprocess.run([sys.executable, str(script)], check=True, cwd=str(root), env=env)
 
     print("Done.")
 
