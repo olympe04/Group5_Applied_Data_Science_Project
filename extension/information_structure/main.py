@@ -13,7 +13,7 @@ from pathlib import Path
 
 CONFIG = {
     "START_DATE": "1999-01-01",
-    "END_DATE": "2025-12-31",
+    "END_DATE": "2013-12-31",
     "RUN_FEATURES": True,
     "RUN_REGRESSIONS": True,
     "DRY_RUN": False,
