@@ -1,6 +1,17 @@
 """
 E11_regression_information_structure.py
 
+Inputs
+------
+- data_features/ecb_information_structure.csv        (text-structure features by date)
+- data_clean/ecb_similarity_jaccard_bigrams.csv     (base 1-lag Jaccard similarity: sim_jaccard)
+- data_clean/ecb_pessimism_with_car.csv             (event-level dataset incl. absCAR_pct (+ optional pessimism_lm_pct))
+- data_clean/controls_month_end.csv                 (monthly macro controls)
+
+Outputs
+-------
+- outputs/tables/table4_absCAR_regressions_info_structure.csv
+
 Purpose
 -------
 Estimate whether "information structure" in ECB statements explains market reactions (|CAR|)
@@ -43,14 +54,16 @@ CFG = {
     "OUT": "outputs/tables/table4_absCAR_regressions_info_structure.csv",
 }
 
-Y = "absCAR_pct"
+Y = "absCAR_pct"  # dependent variable
 
 
 def get_project_root() -> Path:
+    """Resolve repo root so all relative paths work regardless of cwd."""
     return Path(__file__).resolve().parent.parent.parent
 
 
 def window() -> tuple[pd.Timestamp, pd.Timestamp, str, str]:
+    """Read window from env (ECB_START_DATE/ECB_END_DATE) with defaults + validate ordering."""
     s = os.getenv("ECB_START_DATE", DEFAULT_START)
     e = os.getenv("ECB_END_DATE", DEFAULT_END)
     sdt, edt = pd.Timestamp(s), pd.Timestamp(e)
@@ -60,23 +73,28 @@ def window() -> tuple[pd.Timestamp, pd.Timestamp, str, str]:
 
 
 def stars(p: float) -> str:
+    """Significance stars for regression tables."""
     return "***" if p < 0.01 else "**" if p < 0.05 else "*" if p < 0.10 else ""
 
 
 def fmt(m, v: str, nd: int = 3) -> str:
+    """Format coefficient + stars if variable exists in the model; otherwise '.'."""
     return f"{m.params[v]:.{nd}f}{stars(float(m.pvalues[v]))}" if v in m.params.index else "."
 
 
 def month_end(ts: pd.Series) -> pd.Series:
+    """Convert dates to month-end timestamps for consistent merging with monthly controls."""
     return pd.to_datetime(ts, errors="coerce").dt.to_period("M").dt.to_timestamp("M")
 
 
 def winsorize(s: pd.Series, p_lo: float = 0.01, p_hi: float = 0.99) -> pd.Series:
+    """Clip a series to its [p_lo, p_hi] quantiles (robustness to outliers)."""
     lo, hi = s.quantile(p_lo), s.quantile(p_hi)
     return s.clip(lower=lo, upper=hi)
 
 
 def ols_hc1(df: pd.DataFrame, y: str, xs: list[str], min_n: int = 10):
+    """OLS with HC1 robust SE; errors out if too few non-missing observations."""
     d = df[[y] + xs].dropna()
     if len(d) < min_n:
         raise ValueError(f"Not enough non-missing observations for OLS: n={len(d)} (need >= {min_n}) | xs={xs}")
@@ -85,6 +103,7 @@ def ols_hc1(df: pd.DataFrame, y: str, xs: list[str], min_n: int = 10):
 
 
 def load_inputs(root: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Load features, similarity, CAR dataset, and controls; fail fast if any file is missing."""
     p_feat = root / CFG["FEATURES"]
     p_sim = root / CFG["SIM"]
     p_car = root / CFG["CAR"]
@@ -109,6 +128,13 @@ def build_df(
     sdt: pd.Timestamp,
     edt: pd.Timestamp,
 ) -> pd.DataFrame:
+    """
+    Build a single regression DataFrame:
+      - filter to window
+      - merge: CAR + structure features + similarity + monthly controls
+      - compute log(sim_jaccard) (requires sim_jaccard > 0)
+      - add winsorized novelty for robustness
+    """
     feat = feat.loc[(feat["date"] >= sdt) & (feat["date"] <= edt)].copy()
     sim = sim.loc[(sim["date"] >= sdt) & (sim["date"] <= edt)].copy()
     car = car.loc[(car["date"] >= sdt) & (car["date"] <= edt)].copy()
@@ -130,7 +156,6 @@ def build_df(
 
     df["log_similarity"] = np.where(df["sim_jaccard"] > 0, np.log(df["sim_jaccard"]), np.nan)
 
-    # robustness: winsorized novelty (does not affect baseline columns)
     if "ratio_new_tokens" in df.columns:
         df["ratio_new_tokens_w"] = winsorize(df["ratio_new_tokens"])
 
@@ -138,8 +163,12 @@ def build_df(
 
 
 def run_table(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Estimate a set of specs and return a formatted coefficient table.
+    Specs run on dfi = df[sim_jaccard > 0] because log(similarity) requires sim>0.
+    """
     controls = ["output_gap", "inflation", "delta_mro_eom"]
-    has_tone = "pessimism_lm_pct" in df.columns
+    has_tone = "pessimism_lm_pct" in df.columns  # optional tone control
 
     dfi = df[df["sim_jaccard"] > 0].copy()
     if len(dfi) == 0:
@@ -147,7 +176,7 @@ def run_table(df: pd.DataFrame) -> pd.DataFrame:
 
     models: dict[str, sm.regression.linear_model.RegressionResultsWrapper] = {}
 
-    # Baseline: (structure) + similarity
+    # (1)-(4): structure proxy + log(sim)
     structure_vars = [
         ("Entropy + Similarity", ["entropy", "log_similarity"]),
         ("Entropy (norm) + Similarity", ["entropy_norm", "log_similarity"]),
@@ -158,21 +187,16 @@ def run_table(df: pd.DataFrame) -> pd.DataFrame:
         xs_ok = [x for x in xs if x in dfi.columns]
         models[f"({i}) {label}"] = ols_hc1(dfi, Y, xs_ok)
 
-    # Full specs (two variants)
-    # (5) Full with ratio_new_tokens
+    # (5)-(6): full specs with controls (+ optional tone)
     xs5 = ["ratio_new_tokens", "log_similarity"] + controls + (["pessimism_lm_pct"] if has_tone else [])
     models["(5) Full (New-token) + Ctl + Tone"] = ols_hc1(dfi, Y, xs5)
 
-    # (6) Full with bigrams_unique_ratio
     xs6 = ["bigrams_unique_ratio", "log_similarity"] + controls + (["pessimism_lm_pct"] if has_tone else [])
     models["(6) Full (Bigram ratio) + Ctl + Tone"] = ols_hc1(dfi, Y, xs6)
 
-    # Robustness: winsorized novelty
-    # (7) New-token ratio (winsor) + Similarity
+    # (7)-(8): winsorized novelty robustness
     if "ratio_new_tokens_w" in dfi.columns:
         models["(7) New-token (winsor) + Similarity"] = ols_hc1(dfi, Y, ["ratio_new_tokens_w", "log_similarity"])
-
-        # (8) Full with winsorized novelty
         xs8 = ["ratio_new_tokens_w", "log_similarity"] + controls + (["pessimism_lm_pct"] if has_tone else [])
         models["(8) Full (winsor New-token) + Ctl + Tone"] = ols_hc1(dfi, Y, xs8)
 
@@ -213,6 +237,7 @@ def run_table(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def main() -> None:
+    """Load data, build regression frame, run specs, and export the table."""
     root = get_project_root()
     sdt, edt, s, e = window()
 

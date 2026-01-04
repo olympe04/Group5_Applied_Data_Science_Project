@@ -1,7 +1,5 @@
 # extension/information_structure/main.py
-# Run ONLY the information-structure extension pipeline
-#
-# Steps:
+# Runs:
 #   (1) E10_information_structure_features.py
 #   (2) E11_regression_information_structure.py
 
@@ -22,29 +20,27 @@ CONFIG = {
 }
 
 STEPS = [
-    ("features", "E10_information_structure_features.py", CONFIG["RUN_FEATURES"]),
-    ("regressions", "E11_regression_information_structure.py", CONFIG["RUN_REGRESSIONS"]),
+    ("E10_information_structure_features.py", "RUN_FEATURES"),
+    ("E11_regression_information_structure.py", "RUN_REGRESSIONS"),
 ]
 
 
-def run_script(script_path: Path, project_root: Path, env: dict[str, str]) -> None:
-    cmd = [sys.executable, str(script_path)]
-    print(f"▶ {script_path.name}")
-
+def run_script(script: Path, root: Path, env: dict[str, str]) -> None:
+    cmd = [sys.executable, str(script)]
+    print(f"▶ {script.name}")
     if CONFIG["DRY_RUN"]:
         print("  ", " ".join(cmd))
         return
-
-    subprocess.run(cmd, check=True, cwd=str(project_root), env={**os.environ, **env})
+    subprocess.run(cmd, check=True, cwd=str(root), env={**os.environ, **env})
 
 
 def main() -> None:
-    scripts_dir = Path(__file__).resolve().parent      # .../extension/information_structure
-    project_root = scripts_dir.parent.parent          # .../project_root
+    scripts_dir = Path(__file__).resolve().parent
+    root = scripts_dir.parent.parent
 
-    selected = [script for _, script, on in STEPS if on]
+    selected = [name for name, flag in STEPS if CONFIG[flag]]
     if not selected:
-        print("No steps selected (all RUN_* are False). Nothing to do.")
+        print("No steps selected. Nothing to do.")
         return
 
     env = {
@@ -52,8 +48,11 @@ def main() -> None:
         "ECB_END_DATE": CONFIG["END_DATE"],
     }
 
-    for script in selected:
-        run_script((scripts_dir / script).resolve(), project_root, env)
+    for name in selected:
+        script = (scripts_dir / name).resolve()
+        if not script.exists():
+            raise FileNotFoundError(f"Missing script: {script}")
+        run_script(script, root, env)
 
     print("Done.")
 
