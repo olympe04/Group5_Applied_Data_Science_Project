@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 CONFIG = {
-    "START_DATE": "1999-01-01",
+    "START_DATE": "2014-01-01",
     "END_DATE": "2025-12-31",
 
     # toggle steps

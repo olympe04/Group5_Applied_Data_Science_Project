@@ -245,8 +245,8 @@ def run_table4(
     specs_log = {
         "(1)": ["pessimism_lm_pct"],
         "(2)": controls,
-        "(3)": ["pessimism_lm_pct", "pess_x_logsim"],
-        "(4)": ["pessimism_lm_pct", "pess_x_logsim"] + controls,
+        "(3)": ["pess_x_logsim"],
+        "(4)": ["pess_x_logsim"] + controls,
     }
 
     def col_log(m):
@@ -289,8 +289,8 @@ def run_table4(
 
     # --- UPDATED specs (no z_sim_tfidf main effect) ---
     specs_z = {
-        "(3z)": ["pessimism_lm_pct", "pess_x_zsim"],
-        "(4z)": ["pessimism_lm_pct", "pess_x_zsim"] + controls,
+        "(3z)": ["pess_x_zsim"],
+        "(4z)": ["pess_x_zsim"] + controls,
     }
 
     def col_z(m):
