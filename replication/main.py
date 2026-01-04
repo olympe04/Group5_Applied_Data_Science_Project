@@ -20,7 +20,7 @@ from typing import Dict, List, Set, Tuple
 # - REQUIRE_RAW_IF_NO_SCRAPE enforces presence of step (2) output when scraping is disabled.
 # - DRY_RUN prints commands instead of executing them.
 CONFIG = {
-    "START_DATE": "2014-01-01",
+    "START_DATE": "1999-01-01",
     "END_DATE": "2025-12-31",
     "RUN_SCRAPING": False,
     "REQUIRE_RAW_IF_NO_SCRAPE": True,
